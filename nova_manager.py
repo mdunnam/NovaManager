@@ -19,6 +19,8 @@ import os
 import hashlib
 import shutil
 
+from ui.gallery_tab import GalleryTab
+
 from database import PhotoDatabase
 from ai_analyzer import analyze_image
 
@@ -582,12 +584,9 @@ class MainWindow(QMainWindow):
         # Tab widget for different views
         self.tabs = QTabWidget()
         print('Tab widget created', file=sys.stderr)
-        # Gallery tab (visual browse first)
         try:
-            print('Creating Gallery tab...', file=sys.stderr)
-            gallery_tab = self.create_gallery_tab()
-            gallery_tab.layout().addWidget(QLabel('Gallery Tab Loaded (DEBUG)', parent=gallery_tab))
-            self.tabs.addTab(gallery_tab, "Gallery")
+            self.gallery_tab = GalleryTab(self)
+            self.tabs.addTab(self.gallery_tab, "Gallery")
             print('Gallery tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Gallery tab: {e}', file=sys.stderr)
@@ -788,7 +787,7 @@ class MainWindow(QMainWindow):
         thumb_layout.addWidget(QLabel("Default Gallery Thumbnail Size:"))
         gallery_size_combo = QComboBox()
         gallery_size_combo.addItems(["Small", "Medium", "Large"])
-        gallery_size_combo.setCurrentText(self.gallery_size.currentText())
+        gallery_size_combo.setCurrentText(self.gallery_tab.get_gallery_size())
         thumb_layout.addWidget(gallery_size_combo)
         
         thumb_group.setLayout(thumb_layout)
@@ -876,10 +875,10 @@ class MainWindow(QMainWindow):
     
     def apply_settings(self, dialog, gallery_size, theme):
         """Apply settings and close dialog"""
-        self.gallery_size.setCurrentText(gallery_size)
+        self.gallery_tab.set_gallery_size(gallery_size)
         self.settings.setValue("ui_theme", theme)
         self.apply_theme(theme)
-        self.refresh_gallery()
+        self.gallery_tab.refresh()
         dialog.close()
     
     def clear_thumbnail_cache(self):
@@ -1829,153 +1828,8 @@ class MainWindow(QMainWindow):
     # Notes UI removed from main window; notes are managed in Lightbox and Library column
     
     def create_gallery_tab(self):
-        """Create gallery grid view tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Toolbar
-        toolbar = QHBoxLayout()
-        
-        # Sort dropdown
-        toolbar.addWidget(QLabel("Sort by:"))
-        self.gallery_sort = QComboBox()
-        self.gallery_sort.addItems(["Date Created", "ID", "Type", "Status", "Package"])
-        self.gallery_sort.currentTextChanged.connect(self.refresh_gallery)
-        toolbar.addWidget(self.gallery_sort)
-        
-        # Thumbnail size for gallery
-        toolbar.addWidget(QLabel("Size:"))
-        self.gallery_size = QComboBox()
-        self.gallery_size.addItems(["Small", "Medium", "Large"])
-        self.gallery_size.setCurrentText("Medium")
-        self.gallery_size.currentTextChanged.connect(self.refresh_gallery)
-        toolbar.addWidget(self.gallery_size)
-        
-        toolbar.addStretch()
-        
-        # Refresh button
-        refresh_gallery_btn = QPushButton("Refresh")
-        refresh_gallery_btn.clicked.connect(self.refresh_gallery)
-        toolbar.addWidget(refresh_gallery_btn)
-        
-        layout.addLayout(toolbar)
-        
-        # Splitter for grid and details panel
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Scroll area for grid
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        
-        # Container for grid
-        self.gallery_container = QWidget()
-        self.gallery_grid = QGridLayout(self.gallery_container)
-        self.gallery_grid.setSpacing(10)
-        self.gallery_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        
-        scroll.setWidget(self.gallery_container)
-        splitter.addWidget(scroll)
-        
-        # Details panel on the right - editable form
-        details_widget = QWidget()
-        details_layout = QVBoxLayout(details_widget)
-        
-        # Title
-        details_title = QLabel("<h3>Photo Details</h3>")
-        details_layout.addWidget(details_title)
-        
-        # Scroll area for form fields
-        details_scroll = QScrollArea()
-        details_scroll.setWidgetResizable(True)
-        details_scroll.setMaximumWidth(350)
-        details_scroll.setMinimumWidth(250)
-        
-        form_widget = QWidget()
-        form_layout = QVBoxLayout(form_widget)
-        
-        # Store current photo ID
-        self.current_gallery_photo_id = None
-        
-        # ID (read-only)
-        form_layout.addWidget(QLabel("<b>ID:</b>"))
-        self.gallery_id_label = QLabel("Select a photo")
-        form_layout.addWidget(self.gallery_id_label)
-        
-        # Filepath (read-only)
-        form_layout.addWidget(QLabel("<b>Filepath:</b>"))
-        self.gallery_filepath_label = QLabel("")
-        self.gallery_filepath_label.setWordWrap(True)
-        self.gallery_filepath_label.setStyleSheet("QLabel { font-size: 9px; }")
-        form_layout.addWidget(self.gallery_filepath_label)
-        
-        # Editable fields
-        form_layout.addWidget(QLabel("<b>Type:</b>"))
-        self.gallery_type = QLineEdit()
-        form_layout.addWidget(self.gallery_type)
-        
-        form_layout.addWidget(QLabel("<b>Pose:</b>"))
-        self.gallery_pose = QLineEdit()
-        form_layout.addWidget(self.gallery_pose)
-        
-        form_layout.addWidget(QLabel("<b>Facing:</b>"))
-        self.gallery_facing = QComboBox()
-        self.gallery_facing.addItems(["camera", "up", "down", "left", "right", "away"])
-        self.gallery_facing.setEditable(True)
-        form_layout.addWidget(self.gallery_facing)
-        
-        form_layout.addWidget(QLabel("<b>Level:</b>"))
-        self.gallery_level = QLineEdit()
-        form_layout.addWidget(self.gallery_level)
-        
-        form_layout.addWidget(QLabel("<b>Color:</b>"))
-        self.gallery_color = QLineEdit()
-        form_layout.addWidget(self.gallery_color)
-        
-        form_layout.addWidget(QLabel("<b>Material:</b>"))
-        self.gallery_material = QLineEdit()
-        form_layout.addWidget(self.gallery_material)
-        
-        form_layout.addWidget(QLabel("<b>Clothing:</b>"))
-        self.gallery_clothing = QLineEdit()
-        form_layout.addWidget(self.gallery_clothing)
-        
-        form_layout.addWidget(QLabel("<b>Footwear:</b>"))
-        self.gallery_footwear = QLineEdit()
-        form_layout.addWidget(self.gallery_footwear)
-        
-        form_layout.addWidget(QLabel("<b>Location:</b>"))
-        self.gallery_location = QLineEdit()
-        form_layout.addWidget(self.gallery_location)
-        
-        form_layout.addWidget(QLabel("<b>Package:</b>"))
-        self.gallery_package = QLineEdit()
-        form_layout.addWidget(self.gallery_package)
-        
-        form_layout.addWidget(QLabel("<b>Tags:</b>"))
-        self.gallery_tags = QLineEdit()
-        self.gallery_tags.setPlaceholderText("Comma-separated tags")
-        form_layout.addWidget(self.gallery_tags)
-        
-        form_layout.addStretch()
-        
-        # Save button
-        save_btn = QPushButton("Save Changes")
-        save_btn.clicked.connect(self.save_gallery_details)
-        form_layout.addWidget(save_btn)
-        
-        details_scroll.setWidget(form_widget)
-        details_layout.addWidget(details_scroll)
-        
-        splitter.addWidget(details_widget)
-        
-        # Set initial splitter sizes (grid takes more space)
-        splitter.setSizes([1000, 300])
-        
-        layout.addWidget(splitter)
-        
-        return widget
+        """Return the shared gallery tab widget."""
+        return self.gallery_tab
     
     def create_filters_tab(self):
         """Create filters and search tab"""
@@ -3912,189 +3766,28 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
     
     def refresh_gallery(self):
-        """Refresh the gallery grid view"""
-        photos = self.db.get_all_photos()
-        self.refresh_gallery_with_photos(photos)
+        """Delegate to GalleryTab.refresh."""
+        if hasattr(self, 'gallery_tab') and self.gallery_tab:
+            self.gallery_tab.refresh()
     
     def refresh_gallery_with_photos(self, photos):
-        """Refresh the gallery grid view with specific photos"""
-        # Clear existing items
-        while self.gallery_grid.count():
-            item = self.gallery_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        
-        # Sort photos
-        sort_by = self.gallery_sort.currentText()
-        if sort_by == "Date Created":
-            photos.sort(key=lambda p: p['date_created'] or '', reverse=True)
-        elif sort_by == "ID":
-            photos.sort(key=lambda p: p['id'])
-        elif sort_by == "Type":
-            photos.sort(key=lambda p: p['type_of_shot'] or '')
-        elif sort_by == "Status":
-            photos.sort(key=lambda p: p['status'] or '')
-        elif sort_by == "Package":
-            photos.sort(key=lambda p: p['package_name'] or '')
-        
-        # Get thumbnail size
-        size_map = {"Small": 150, "Medium": 200, "Large": 250}
-        thumb_size = size_map[self.gallery_size.currentText()]
-        
-        # Calculate columns based on window width (approximate)
-        columns = 5  # Default
-        
-        # Add photos to grid
-        for idx, photo in enumerate(photos):
-            row = idx // columns
-            col = idx % columns
-            
-            # Create thumbnail widget
-            thumb_widget = self.create_gallery_thumbnail(photo, thumb_size)
-            self.gallery_grid.addWidget(thumb_widget, row, col)
+        if hasattr(self, 'gallery_tab') and self.gallery_tab:
+            self.gallery_tab.refresh_with_photos(list(photos))
     
     def create_gallery_thumbnail(self, photo, size):
-        """Create a thumbnail widget for gallery view"""
-        frame = QFrame()
-        frame.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
-        frame.setLineWidth(2)
-        frame.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Thumbnail image
-        img_label = QLabel()
-        img_label.setObjectName("thumbnailCell")
-        img_label.setFixedSize(size, size)
-        img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Load thumbnail
-        if photo['filepath'] and os.path.exists(photo['filepath']):
-            pixmap = self.get_cached_thumbnail(photo['filepath'], size)
-            if pixmap and not pixmap.isNull():
-                img_label.setPixmap(pixmap)
-            else:
-                img_label.setText("[No Preview]")
-        else:
-            img_label.setText("[Missing]")
-        
-        layout.addWidget(img_label)
-        
-        # Info label with face match stars (if any)
-        face_match = int(photo.get('face_similarity') or 0)
-        stars = "⭐" * face_match if face_match > 0 else ""
-        info_text = f"ID: {photo['id']:06d}  {stars}\n"
-        if photo['type_of_shot']:
-            info_text += f"{photo['type_of_shot']}\n"
-        if photo['status']:
-            status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready', 'released': 'Released'}
-            info_text += status_map.get(photo['status'], photo['status'])
-        
-        info_label = QLabel(info_text)
-        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info_label.setStyleSheet("QLabel { font-size: 10px; }")
-        layout.addWidget(info_label)
-        
-        # Make clickable to open Lightbox (same as Library thumbnails)
-        frame.mousePressEvent = lambda event, fp=photo['filepath'], pid=photo['id']: self.handle_gallery_thumbnail_click(event, fp, pid)
-        
-        return frame
+        return self.gallery_tab._create_thumbnail(photo, size) if hasattr(self, 'gallery_tab') else None
     
     def handle_gallery_thumbnail_click(self, event, filepath, photo_id):
-        """Handle gallery thumbnail click: left opens Lightbox, middle opens folder."""
-        try:
-            if event.button() == Qt.MouseButton.MiddleButton:
-                folder = os.path.dirname(filepath)
-                if folder and os.path.isdir(folder):
-                    os.startfile(folder)
-                event.accept()
-                return
-            if event.button() == Qt.MouseButton.LeftButton:
-                self.show_full_image(filepath, photo_id)
-                event.accept()
-                return
-        except Exception as e:
-            print(f"gallery thumbnail click error: {e}")
-        event.ignore()
+        if hasattr(self, 'gallery_tab') and self.gallery_tab:
+            self.gallery_tab._handle_thumbnail_click(event, filepath, photo_id)
     
     def show_photo_details(self, photo):
-        """Show detailed metadata for a photo in the right panel"""
-        # Store current photo ID
-        self.current_gallery_photo_id = photo['id']
-        
-        # Populate form fields
-        self.gallery_id_label.setText(f"{photo['id']:06d}")
-        self.gallery_filepath_label.setText(photo['filepath'] or '')
-        self.gallery_type.setText(photo['type_of_shot'] or '')
-        self.gallery_pose.setText(photo['pose'] or '')
-        self.gallery_facing.setCurrentText(photo['facing_direction'] or '')
-        self.gallery_level.setText(photo['explicit_level'] or '')
-        self.gallery_color.setText(photo['color_of_clothing'] or '')
-        self.gallery_material.setText(photo['material'] or '')
-        self.gallery_clothing.setText(photo['type_clothing'] or '')
-        self.gallery_footwear.setText(photo['footwear'] or '')
-        self.gallery_location.setText(photo['location'] or '')
-        self.gallery_package.setText(photo['package_name'] or '')
-        self.gallery_tags.setText(photo['tags'] or '')
+        if hasattr(self, 'gallery_tab') and self.gallery_tab:
+            self.gallery_tab.show_details(photo)
     
     def save_gallery_details(self):
-        """Save edited metadata from gallery details panel"""
-        if not self.current_gallery_photo_id:
-            QMessageBox.warning(self, "No Photo Selected", "Please select a photo first")
-            return
-        
-        # Get original values for correction tracking
-        photo = self.db.get_photo(self.current_gallery_photo_id)
-        if not photo:
-            QMessageBox.warning(self, "Error", "Photo not found in database")
-            return
-        
-        # Collect updated metadata
-        metadata = {
-            'type_of_shot': self.gallery_type.text(),
-            'pose': self.gallery_pose.text(),
-            'facing_direction': self.gallery_facing.currentText(),
-            'explicit_level': self.gallery_level.text(),
-            'color_of_clothing': self.gallery_color.text(),
-            'material': self.gallery_material.text(),
-            'type_clothing': self.gallery_clothing.text(),
-            'footwear': self.gallery_footwear.text(),
-            'location': self.gallery_location.text(),
-            'package_name': self.gallery_package.text(),
-            'tags': self.gallery_tags.text()
-        }
-        
-        # Track corrections for AI-generated fields
-        ai_fields = ['type_of_shot', 'pose', 'facing_direction', 'explicit_level', 
-                    'color_of_clothing', 'material', 'type_clothing', 'footwear', 'location']
-        
-        for field in ai_fields:
-            original_value = photo.get(field)
-            new_value = metadata.get(field)
-            if original_value and new_value and original_value != new_value:
-                print(f"Saving correction for photo {self.current_gallery_photo_id}, {field}: '{original_value}' -> '{new_value}'")
-                self.db.save_correction(self.current_gallery_photo_id, field, original_value, new_value)
-        
-        # Update database
-        try:
-            self.db.update_photo_metadata(self.current_gallery_photo_id, metadata)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save: {e}")
-            return
-        
-        # Refresh gallery to show updated info
-        self.refresh_gallery()
-        
-        # Reload the photo details to show updated data
-        updated_photo = self.db.get_photo(self.current_gallery_photo_id)
-        if updated_photo:
-            self.show_photo_details(updated_photo)
-        
-        # Refresh tag cloud in case tags changed
-        self.refresh_tag_cloud()
-        
-        self.statusBar().showMessage(f"Updated photo {self.current_gallery_photo_id:06d}", 3000)
+        if hasattr(self, 'gallery_tab') and self.gallery_tab:
+            self.gallery_tab.save_details()
     
     def mark_selected(self, field, value):
         """Mark checked/selected photos with a value"""
