@@ -22,6 +22,12 @@ import shutil
 from ui.gallery_tab import GalleryTab
 from ui.face_matching_tab import FaceMatchingTab
 from ui.photos_tab import PhotosTab
+from ui.publish_tab import PublishTab
+from ui.filters_tab import FiltersTab
+from ui.vocabularies_tab import VocabulariesTab
+from ui.learning_tab import AILearningTab
+from ui.instagram_tab import InstagramTab
+from ui.tiktok_tab import TikTokTab
 
 from database import PhotoDatabase
 from ai_analyzer import analyze_image
@@ -599,26 +605,20 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating Library tab: {e}', file=sys.stderr)
         try:
-            print('Creating Filters tab...', file=sys.stderr)
-            filters_tab = self.create_filters_tab()
-            filters_tab.layout().addWidget(QLabel('Filters Tab Loaded (DEBUG)', parent=filters_tab))
-            self.tabs.addTab(filters_tab, "Filters")
+            self.filters_tab = FiltersTab(self)
+            self.tabs.addTab(self.filters_tab, "Filters")
             print('Filters tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Filters tab: {e}', file=sys.stderr)
         try:
-            print('Creating Vocabularies tab...', file=sys.stderr)
-            vocab_tab = self.create_vocabulary_tab()
-            vocab_tab.layout().addWidget(QLabel('Vocabularies Tab Loaded (DEBUG)', parent=vocab_tab))
-            self.tabs.addTab(vocab_tab, "Vocabularies")
+            self.vocabularies_tab = VocabulariesTab(self)
+            self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
             print('Vocabularies tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
         try:
-            print('Creating AI Learning tab...', file=sys.stderr)
-            learning_tab = self.create_learning_tab()
-            learning_tab.layout().addWidget(QLabel('AI Learning Tab Loaded (DEBUG)', parent=learning_tab))
-            self.tabs.addTab(learning_tab, "AI Learning")
+            self.learning_tab = AILearningTab(self)
+            self.tabs.addTab(self.learning_tab, "AI Learning")
             print('AI Learning tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
@@ -629,26 +629,20 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating Face Matching tab: {e}', file=sys.stderr)
         try:
-            print('Creating Publish tab...', file=sys.stderr)
-            publish_tab = self.create_publish_tab()
-            publish_tab.layout().addWidget(QLabel('Publish Tab Loaded (DEBUG)', parent=publish_tab))
-            self.tabs.addTab(publish_tab, "Publish")
+            self.publish_tab = PublishTab(self)
+            self.tabs.addTab(self.publish_tab, "Publish")
             print('Publish tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Publish tab: {e}', file=sys.stderr)
         try:
-            print('Creating Instagram tab...', file=sys.stderr)
-            instagram_tab = self.create_instagram_tab()
-            instagram_tab.layout().addWidget(QLabel('Instagram Tab Loaded (DEBUG)', parent=instagram_tab))
-            self.tabs.addTab(instagram_tab, "Instagram")
+            self.instagram_tab = InstagramTab(self)
+            self.tabs.addTab(self.instagram_tab, "Instagram")
             print('Instagram tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Instagram tab: {e}', file=sys.stderr)
         try:
-            print('Creating TikTok tab...', file=sys.stderr)
-            tiktok_tab = self.create_tiktok_tab()
-            tiktok_tab.layout().addWidget(QLabel('TikTok Tab Loaded (DEBUG)', parent=tiktok_tab))
-            self.tabs.addTab(tiktok_tab, "TikTok")
+            self.tiktok_tab = TikTokTab(self)
+            self.tabs.addTab(self.tiktok_tab, "TikTok")
             print('TikTok tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating TikTok tab: {e}', file=sys.stderr)
@@ -1108,9 +1102,8 @@ class MainWindow(QMainWindow):
         toggle_fansly.setToolTip("Release: Fansly")
         toggle_fansly.clicked.connect(lambda: self.toggle_release_status("released_fansly"))
     def create_publish_tab(self):
-        """Create Publish tab for staging, release, and automation"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
+        """Return the shared publish tab widget."""
+        return self.publish_tab
         
         # Info section
         info = QLabel("<b>Publish & Release</b> — Stage photos for platforms, automate uploads, and track release status.")
