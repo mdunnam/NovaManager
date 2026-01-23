@@ -33,196 +33,38 @@ class PhotoPickerDialog(QDialog):
         self.selected_photo = None
         self.init_ui()
     
-    def init_ui(self):
+    def _init_ui_legacy(self):
         """Initialize the picker UI"""
         layout = QVBoxLayout(self)
-        
-        # Search/filter row
+
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("Search:"))
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Filter by type, status, tags...")
         self.search_edit.textChanged.connect(self.refresh_gallery)
-        import sys
-        print('UI init started', file=sys.stderr)
         search_layout.addWidget(self.search_edit)
         layout.addLayout(search_layout)
-        print('Main widget created', file=sys.stderr)
-        
-        # Gallery grid (scrollable)
-        print('Main layout created', file=sys.stderr)
+
         scroll = QScrollArea()
-        main_layout.addWidget(QLabel('DEBUG: Main window loaded', parent=main_widget))
-        print('Main layout set on main widget', file=sys.stderr)
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { background-color: #f5f5f5; }")
-        print('Left layout created', file=sys.stderr)
-        
         self.gallery_container = QWidget()
-        print('Top section created', file=sys.stderr)
         self.gallery_layout = QGridLayout(self.gallery_container)
-        print('Top section added to left layout', file=sys.stderr)
         self.gallery_layout.setSpacing(10)
         self.gallery_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        print('Tab widget created', file=sys.stderr)
-        
         scroll.setWidget(self.gallery_container)
-        print('Tab widget size policy and minimum size set', file=sys.stderr)
         layout.addWidget(scroll)
-        try:
-            print('Creating Gallery tab...', file=sys.stderr)
-            gallery_tab = self.create_gallery_tab()
-            if gallery_tab.layout() is not None:
-                gallery_tab.layout().addWidget(QLabel('DEBUG: Gallery tab loaded', parent=gallery_tab))
-            print('Gallery tab layout:', gallery_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(gallery_tab, "Gallery")
-            print('Gallery tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Gallery tab: {e}', file=sys.stderr)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
         select_btn = QPushButton("Select")
-        try:
-            print('Creating Library tab...', file=sys.stderr)
-            photos_tab = self.create_photos_tab()
-            if photos_tab.layout() is not None:
-                photos_tab.layout().addWidget(QLabel('DEBUG: Library tab loaded', parent=photos_tab))
-            print('Library tab layout:', photos_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(photos_tab, "Library")
-            print('Library tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Library tab: {e}', file=sys.stderr)
+        select_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_row.addWidget(select_btn)
+        button_row.addWidget(cancel_btn)
+        layout.addLayout(button_row)
+
         self.refresh_gallery()
-        try:
-            print('Creating Filters tab...', file=sys.stderr)
-            filters_tab = self.create_filters_tab()
-            if filters_tab.layout() is not None:
-                filters_tab.layout().addWidget(QLabel('DEBUG: Filters tab loaded', parent=filters_tab))
-            print('Filters tab layout:', filters_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(filters_tab, "Filters")
-            print('Filters tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Filters tab: {e}', file=sys.stderr)
-        
-        try:
-            print('Creating Vocabularies tab...', file=sys.stderr)
-            vocab_tab = self.create_vocabulary_tab()
-            if vocab_tab.layout() is not None:
-                vocab_tab.layout().addWidget(QLabel('DEBUG: Vocabularies tab loaded', parent=vocab_tab))
-            print('Vocabularies tab layout:', vocab_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(vocab_tab, "Vocabularies")
-            print('Vocabularies tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
-        try:
-            print('Creating AI Learning tab...', file=sys.stderr)
-            learning_tab = self.create_learning_tab()
-            if learning_tab.layout() is not None:
-                learning_tab.layout().addWidget(QLabel('DEBUG: AI Learning tab loaded', parent=learning_tab))
-            print('AI Learning tab layout:', learning_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(learning_tab, "AI Learning")
-            print('AI Learning tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
-        try:
-            print('Creating Face Matching tab...', file=sys.stderr)
-            face_tab = self.create_face_matching_tab()
-            if face_tab.layout() is not None:
-                face_tab.layout().addWidget(QLabel('DEBUG: Face Matching tab loaded', parent=face_tab))
-            print('Face Matching tab layout:', face_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(face_tab, "Face Matching")
-            print('Face Matching tab added', file=sys.stderr)
-        except Exception as e:
-                print(f'Error creating Face Matching tab: {e}', file=sys.stderr)
-        try:
-            print('Creating Publish tab...', file=sys.stderr)
-            publish_tab = self.create_publish_tab()
-            if publish_tab.layout() is not None:
-                publish_tab.layout().addWidget(QLabel('DEBUG: Publish tab loaded', parent=publish_tab))
-            print('Publish tab layout:', publish_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(publish_tab, "Publish")
-            print('Publish tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Publish tab: {e}', file=sys.stderr)
-        try:
-            print('Creating Instagram tab...', file=sys.stderr)
-            instagram_tab = self.create_instagram_tab()
-            if instagram_tab.layout() is not None:
-                instagram_tab.layout().addWidget(QLabel('DEBUG: Instagram tab loaded', parent=instagram_tab))
-            print('Instagram tab layout:', instagram_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(instagram_tab, "Instagram")
-            print('Instagram tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Instagram tab: {e}', file=sys.stderr)
-        try:
-            print('Creating TikTok tab...', file=sys.stderr)
-            tiktok_tab = self.create_tiktok_tab()
-            if tiktok_tab.layout() is not None:
-                tiktok_tab.layout().addWidget(QLabel('DEBUG: TikTok tab loaded', parent=tiktok_tab))
-            print('TikTok tab layout:', tiktok_tab.layout(), file=sys.stderr)
-            self.tabs.addTab(tiktok_tab, "TikTok")
-            print('TikTok tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating TikTok tab: {e}', file=sys.stderr)
-
-        layout = QVBoxLayout(self)
-
-        # Toolbar
-        btn_row = QHBoxLayout()
-        self.zoom_out_btn = QPushButton("-")
-        self.zoom_out_btn.clicked.connect(lambda: self.adjust_zoom(0.9))
-        self.zoom_in_btn = QPushButton("+")
-        self.zoom_in_btn.clicked.connect(lambda: self.adjust_zoom(1.1))
-        self.reset_btn = QPushButton("100%")
-        self.reset_btn.clicked.connect(lambda: self.set_zoom(1.0))
-        self.fit_btn = QPushButton("Fit")
-        self.fit_btn.clicked.connect(self.fit_to_view)
-        self.close_btn = QPushButton("Close")
-        self.close_btn.clicked.connect(self.close)
-        for b in (self.zoom_out_btn, self.zoom_in_btn, self.reset_btn, self.fit_btn, self.close_btn):
-            btn_row.addWidget(b)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
-
-        # Image view + Notes pane (side-by-side)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        self.label = QLabel()
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.scroll = NoWheelScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setWidget(self.label)
-        splitter.addWidget(self.scroll)
-
-        notes_container = QWidget()
-        notes_layout = QVBoxLayout(notes_container)
-        notes_layout.setContentsMargins(8, 8, 8, 8)
-        notes_layout.addWidget(QLabel("Notes"))
-        self.notes_edit = QTextEdit()
-        self.notes_edit.setPlaceholderText("Type notes about this image...")
-        self.notes_edit.textChanged.connect(self.on_notes_text_changed)
-        # Load existing notes from database
-        try:
-            photo = self.db.get_photo(self.photo_id)
-            self.notes_edit.setText((photo.get('notes') or '') if photo else '')
-        except Exception:
-            self.notes_edit.setText('')
-        notes_layout.addWidget(self.notes_edit)
-        splitter.addWidget(notes_container)
-        splitter.setSizes([800, 300])
-        layout.addWidget(splitter)
-
-        if not self.base_pixmap.isNull():
-            self.apply_scale()
-        else:
-            self.label.setText("[Unable to load image]")
-
-        # Install event filter on label to capture middle-click drag
-        self.label.mousePressEvent = self._on_label_press
-        self.label.mouseMoveEvent = self._on_label_move
-        self.label.mouseReleaseEvent = self._on_label_release
-
-        # Schedule fit-to-view after dialog is shown (need valid viewport size)
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(100, self.fit_to_view)
 
     def apply_scale(self):
         if self.base_pixmap.isNull():
@@ -840,11 +682,8 @@ class MainWindow(QMainWindow):
                 with open(qss_path, "r", encoding="utf-8") as f:
                     qss_parts.append(f.read())
             # Apply combined stylesheet (or clear)
-            print('DEBUG: Creating Instagram tab...', file=sys.stderr)
             QApplication.instance().setStyleSheet("\n".join(qss_parts))
-            instagram_tab.layout().addWidget(QLabel('DEBUG: Instagram Tab Loaded', parent=instagram_tab))
         except Exception as e:
-            print('DEBUG: Instagram tab added', file=sys.stderr)
             print(f"apply_theme error: {e}")
     
     def init_ui(self):
