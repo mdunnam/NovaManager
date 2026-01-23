@@ -21,6 +21,7 @@ import shutil
 
 from ui.gallery_tab import GalleryTab
 from ui.face_matching_tab import FaceMatchingTab
+from ui.photos_tab import PhotosTab
 
 from database import PhotoDatabase
 from ai_analyzer import analyze_image
@@ -592,11 +593,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating Gallery tab: {e}', file=sys.stderr)
         try:
-            print('Creating Library tab...', file=sys.stderr)
-            photos_tab = self.create_photos_tab()
-            self.tabs.addTab(photos_tab, "Library")
+            self.photos_tab = PhotosTab(self)
+            self.tabs.addTab(self.photos_tab, "Library")
             print('Library tab added', file=sys.stderr)
-            self.refresh_photos()
         except Exception as e:
             print(f'Error creating Library tab: {e}', file=sys.stderr)
         try:
@@ -936,18 +935,8 @@ class MainWindow(QMainWindow):
         return widget
     
     def create_photos_tab(self):
-        """Create the photos table view"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Toolbar
-        toolbar = QHBoxLayout()
-        refresh_btn = QPushButton()
-        refresh_btn.setIcon(self.get_icon("refresh.png", "↻"))
-        refresh_btn.setIconSize(self.icon_size)
-        refresh_btn.setToolTip("Refresh photo table")
-        refresh_btn.clicked.connect(self.refresh_photos)
-        toolbar.addWidget(refresh_btn)
+        """Return the shared photos tab widget."""
+        return self.photos_tab
         
         reanalyze_btn = QPushButton()
         reanalyze_btn.setIcon(self.get_icon("reanalyze.png", "AI"))
@@ -1118,12 +1107,6 @@ class MainWindow(QMainWindow):
         toggle_fansly.setIconSize(self.icon_size)
         toggle_fansly.setToolTip("Release: Fansly")
         toggle_fansly.clicked.connect(lambda: self.toggle_release_status("released_fansly"))
-        bottom_toolbar.addWidget(toggle_fansly)
-        
-        layout.addLayout(bottom_toolbar)
-        
-        return widget
-    
     def create_publish_tab(self):
         """Create Publish tab for staging, release, and automation"""
         widget = QWidget()
@@ -2523,17 +2506,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Unpackaged {moved} photo(s) to root and cleared package", 3000)
 
     def on_table_cell_double_clicked(self, row: int, col: int):
-        """Open the folder of the photo when package cell is double-clicked"""
-        try:
-            if col == self.COL_PACKAGE:
-                fp_item = self.photo_table.item(row, self.COL_FILEPATH)
-                if fp_item:
-                    path = fp_item.text()
-                    folder = os.path.dirname(path)
-                    if folder and os.path.isdir(folder):
-                        os.startfile(folder)
-        except Exception as e:
-            print(f"Open package folder error: {e}")
+        """Delegate to PhotosTab."""
+        if hasattr(self, 'photos_tab') and self.photos_tab:
+            self.photos_tab.on_table_cell_double_clicked(row, col)
 
     def clear_face_similarity_results(self):
         """Clear all face match ratings (set to 0) and clear benchmark photos"""
@@ -3546,122 +3521,14 @@ class MainWindow(QMainWindow):
         event.ignore()
     
     def toggle_thumbnail_size(self):
-        """Toggle between thumbnail sizes"""
-        sizes = ['off', 'small', 'medium', 'large']
-        current_index = sizes.index(self.current_thumb_size)
-        next_index = (current_index + 1) % len(sizes)
-        self.current_thumb_size = sizes[next_index]
-        self.thumb_btn.setText(f"Thumbnails: {self.current_thumb_size.title()}")
-        
-        # Hide or show thumbnail column using constant
-        if self.current_thumb_size == 'off':
-            self.photo_table.setColumnHidden(self.COL_THUMBNAIL, True)
-        else:
-            self.photo_table.setColumnHidden(self.COL_THUMBNAIL, False)
-        
-        self.refresh_photos()
+        """Delegate to PhotosTab."""
+        if hasattr(self, 'photos_tab') and self.photos_tab:
+            self.photos_tab.toggle_thumbnail_size()
     
     def refresh_photos(self):
-        """Refresh the photos table"""
-        try:
-            photos = self.db.get_all_photos()
-            print(f"Got {len(photos)} photos from database")
-            self.photo_table.setSortingEnabled(False)
-            self.photo_table.setRowCount(0)  # Clear table first
-            self.photo_table.setRowCount(len(photos))
-            
-            for i, photo in enumerate(photos):
-                if i % 10 == 0:
-                    print(f"Processing photo {i+1}/{len(photos)}")
-                
-                # Set row height based on thumbnail size
-                thumb_size = self.thumbnail_sizes[self.current_thumb_size]
-                if thumb_size > 0:
-                    self.photo_table.setRowHeight(i, thumb_size + 10)
-                # Column 0: checkbox widget
-                try:
-                    chk = QCheckBox()
-                    chk.setTristate(False)
-                    chk.setChecked(photo['id'] in self.persistent_selected_ids)
-                    chk.setProperty('photo_id', int(photo['id']))
-                    chk.stateChanged.connect(self.on_row_checkbox_toggled)
-                    chk_container = QWidget()
-                    c_layout = QHBoxLayout(chk_container)
-                    c_layout.setContentsMargins(0, 0, 0, 0)
-                    c_layout.addWidget(chk, alignment=Qt.AlignmentFlag.AlignCenter)
-                    self.photo_table.setCellWidget(i, self.COL_CHECKBOX, chk_container)
-                except Exception as _e:
-                    print(f"Checkbox create error row {i}: {_e}")
-
-                # ID column - read only
-                id_item = QTableWidgetItem(f"{photo['id']:06d}")
-                id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.photo_table.setItem(i, self.COL_ID, id_item)
-                
-                # Add thumbnail
-                self.add_thumbnail(i, self.COL_THUMBNAIL, photo['filepath'])
-                
-                self.photo_table.setItem(i, self.COL_TYPE, QTableWidgetItem(photo['type_of_shot'] or ''))
-                self.photo_table.setItem(i, self.COL_POSE, QTableWidgetItem(photo['pose'] or ''))
-                self.photo_table.setItem(i, self.COL_FACING, QTableWidgetItem(photo['facing_direction'] or ''))
-                self.photo_table.setItem(i, self.COL_LEVEL, QTableWidgetItem(photo['explicit_level'] or ''))
-                self.photo_table.setItem(i, self.COL_COLOR, QTableWidgetItem(photo['color_of_clothing'] or ''))
-                self.photo_table.setItem(i, self.COL_MATERIAL, QTableWidgetItem(photo['material'] or ''))
-                self.photo_table.setItem(i, self.COL_CLOTHING, QTableWidgetItem(photo['type_clothing'] or ''))
-                self.photo_table.setItem(i, self.COL_FOOTWEAR, QTableWidgetItem(photo['footwear'] or ''))
-                self.photo_table.setItem(i, self.COL_LOCATION, QTableWidgetItem(photo['location'] or ''))
-                
-                # Status text
-                status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready for Release', 'released': 'Released'}
-                self.photo_table.setItem(i, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
-                
-                # Checkboxes for release status
-                ig_item = QTableWidgetItem()
-                ig_item.setFlags(ig_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                ig_item.setCheckState(Qt.CheckState.Checked if photo['released_instagram'] else Qt.CheckState.Unchecked)
-                self.photo_table.setItem(i, self.COL_IG, ig_item)
-                
-                tiktok_item = QTableWidgetItem()
-                tiktok_item.setFlags(tiktok_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                tiktok_item.setCheckState(Qt.CheckState.Checked if photo['released_tiktok'] else Qt.CheckState.Unchecked)
-                self.photo_table.setItem(i, self.COL_TIKTOK, tiktok_item)
-                
-                fansly_item = QTableWidgetItem()
-                fansly_item.setFlags(fansly_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                fansly_item.setCheckState(Qt.CheckState.Checked if photo['released_fansly'] else Qt.CheckState.Unchecked)
-                self.photo_table.setItem(i, self.COL_FANSLY, fansly_item)
-                
-                packages = self.db.get_packages(photo['id'])
-                package_display = ', '.join(packages) if packages else (photo.get('package_name') or '')
-                self.photo_table.setItem(i, self.COL_PACKAGE, QTableWidgetItem(package_display))
-                
-                # Tags column
-                self.photo_table.setItem(i, self.COL_TAGS, QTableWidgetItem(photo['tags'] or ''))
-                
-                # Date Created (no fractional seconds)
-                raw_date = str(photo['date_created'] or '')
-                if '.' in raw_date:
-                    raw_date = raw_date.split('.')[0]
-                date_item = QTableWidgetItem(raw_date)
-                date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.photo_table.setItem(i, self.COL_DATE, date_item)
-                
-                filepath_item = QTableWidgetItem(photo['filepath'] or '')
-                filepath_item.setToolTip(photo['filepath'] or 'No path')
-                self.photo_table.setItem(i, self.COL_FILEPATH, filepath_item)
-
-                # Notes column
-                self.photo_table.setItem(i, self.COL_NOTES, QTableWidgetItem(photo.get('notes') or ''))
-        
-            self.photo_table.setSortingEnabled(True)
-            print("Photos table refreshed successfully")
-            
-            # Refresh tag cloud
-            self.refresh_tag_cloud()
-        except Exception as e:
-            print(f"Error in refresh_photos: {e}")
-            import traceback
-            traceback.print_exc()
+        """Delegate to PhotosTab."""
+        if hasattr(self, 'photos_tab') and self.photos_tab:
+            self.photos_tab.refresh()
     
     def refresh_gallery(self):
         """Delegate to GalleryTab.refresh."""
@@ -3696,8 +3563,9 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Updated {len(photo_ids)} photo(s)")
     
     def apply_package(self):
-        """Apply package name to selected photos via popup"""
-        self.set_package_popup()
+        """Delegate to PhotosTab."""
+        if hasattr(self, 'photos_tab') and self.photos_tab:
+            self.photos_tab.apply_package()
 
     def set_package_popup(self):
         """Prompt for package name and apply to selected photos"""
@@ -3989,92 +3857,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Filters cleared", 3000)
     
     def on_table_item_changed(self, item):
-        """Handle changes to table items (checkbox toggles and text edits)"""
-        if not item:
-            return
-            
-        row = item.row()
-        col = item.column()
-        try:
-            header_item = self.photo_table.horizontalHeaderItem(col)
-            header = header_item.text() if header_item else "<no header>"
-            print(f"[ItemChanged] row={row} col={col} header={header}")
-        except Exception:
-            pass
-        
-        # Skip if we're refreshing/loading data
-        if self.photo_table.signalsBlocked():
-            return
-            
-        photo_id = self.get_photo_id_from_row(row)
-        if photo_id is None:
-            return
-        
-        # Column mapping to database fields
-        column_to_field = self.COLUMN_TO_FIELD
-        
-        # Columns 12-14: Release checkboxes
-        if col == self.COL_IG:
-            checked = item.checkState() == Qt.CheckState.Checked
-            self.db.update_photo_metadata(photo_id, {'released_instagram': 1 if checked else 0})
-        elif col == self.COL_TIKTOK:
-            checked = item.checkState() == Qt.CheckState.Checked
-            self.db.update_photo_metadata(photo_id, {'released_tiktok': 1 if checked else 0})
-        elif col == self.COL_FANSLY:
-            checked = item.checkState() == Qt.CheckState.Checked
-            self.db.update_photo_metadata(photo_id, {'released_fansly': 1 if checked else 0})
-        elif col == self.COL_STATUS:
-            status_map = {'Raw': 'raw', 'Needs Edit': 'needs_edit', 'Ready for Release': 'ready', 'Released': 'released'}
-            reverse_map = {v: k for k, v in status_map.items()}
-            
-            text = item.text()
-            # If user typed a display name, convert it
-            db_value = status_map.get(text, text.lower().replace(' ', '_'))
-            
-            self.db.update_photo_metadata(photo_id, {'status': db_value})
-            # Update display to match standard format
-            if db_value in reverse_map:
-                item.setText(reverse_map[db_value])
-            self.statusBar().showMessage(f"Updated status for photo {photo_id}", 2000)
-        elif col in column_to_field:
-            # Editable metadata fields
-            field_name = column_to_field[col]
-            new_value = item.text()
-
-            if field_name == 'package_name':
-                packages = [p.strip() for p in new_value.split(',') if p.strip()]
-                self.db.set_packages(photo_id, packages)
-                item.setText(', '.join(packages))
-                self.statusBar().showMessage(f"Updated packages for photo {photo_id}", 2000)
-                return
-            
-            # Get original value to track corrections (for AI fields)
-            ai_fields = ['type_of_shot', 'pose', 'facing_direction', 'explicit_level', 
-                        'color_of_clothing', 'material', 'type_clothing', 'footwear', 'location']
-            
-            if field_name in ai_fields:
-                photo = self.db.get_photo(photo_id)
-                original_value = photo.get(field_name)
-                if original_value and original_value != new_value:
-                    # Save correction for AI learning
-                    print(f"Saving correction for photo {photo_id}, {field_name}: '{original_value}' -> '{new_value}'")
-                    self.db.save_correction(photo_id, field_name, original_value, new_value)
-                    
-                    # Auto-backup every 10 corrections
-                    if not hasattr(self, '_corrections_since_backup'):
-                        self._corrections_since_backup = 0
-                    self._corrections_since_backup += 1
-                    if self._corrections_since_backup >= 10:
-                        print("[Auto-backup] Creating backup after 10 corrections...")
-                        self.backup_learning_data()
-                        self._corrections_since_backup = 0
-            
-            self.db.update_photo_metadata(photo_id, {field_name: new_value})
-            self.statusBar().showMessage(f"Updated {field_name} for photo {photo_id}", 2000)
-            
-            # Refresh tag cloud if tags were edited
-            if field_name == 'tags':
-                self.refresh_tag_cloud()
+        """Delegate to PhotosTab."""
+        if hasattr(self, 'photos_tab') and self.photos_tab:
+            self.photos_tab.on_table_item_changed(item)
     
     def bulk_edit_cells(self):
         """Bulk edit selected cells with the same value"""
