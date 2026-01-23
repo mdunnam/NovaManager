@@ -683,34 +683,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
-        # Add a visible debug label
-        debug_label = QLabel('DEBUG: Main Window Loaded')
-        debug_label.setStyleSheet('font-size: 24px; color: red; background: yellow;')
-        main_layout.addWidget(debug_label)
         # Top section - Folder selection and analysis
         top_section = self.create_top_section()
         main_layout.addWidget(top_section)
-        # Tab widget for different views
-        self.tabs = QTabWidget()
-        print('Tab widget created', file=sys.stderr)
-        # Gallery tab (visual browse first)
-        try:
-            print('Creating Gallery tab...', file=sys.stderr)
-            gallery_tab = self.create_gallery_tab()
-            gallery_tab.layout().addWidget(QLabel('Gallery Tab Loaded (DEBUG)', parent=gallery_tab))
-            self.tabs.addTab(gallery_tab, "Gallery")
-            print('Gallery tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Gallery tab: {e}', file=sys.stderr)
-        try:
-            print('Creating Library tab...', file=sys.stderr)
-            photos_tab = self.create_photos_tab()
-            photos_tab.layout().addWidget(QLabel('Library Tab Loaded (DEBUG)', parent=photos_tab))
-            self.tabs.addTab(photos_tab, "Library")
-            print('Library tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Library tab: {e}', file=sys.stderr)
-        # ...existing code for other tabs...
+        # Tab widget for different views - already created in setup_ui()
         main_layout.addWidget(self.tabs)
         self.tabs.setCurrentIndex(0)
         
@@ -1104,146 +1080,27 @@ class MainWindow(QMainWindow):
     def create_publish_tab(self):
         """Return the shared publish tab widget."""
         return self.publish_tab
-        
-        # Info section
-        info = QLabel("<b>Publish & Release</b> — Stage photos for platforms, automate uploads, and track release status.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Staging section
-        staging_group = QFrame()
-        staging_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        staging_layout = QVBoxLayout(staging_group)
-        
-        staging_label = QLabel("<b>Stage for Platforms</b>")
-        staging_layout.addWidget(staging_label)
-        
-        staging_controls = QHBoxLayout()
-        staging_controls.addWidget(QLabel("Stage selected photos to:"))
-        
-        stage_ig = QPushButton()
-        stage_ig.setIcon(self.get_icon("instagram.png", "IG"))
-        stage_ig.setIconSize(self.icon_size)
-        stage_ig.setToolTip("Stage to Instagram")
-        stage_ig.clicked.connect(lambda: self.toggle_staged("instagram"))
-        staging_controls.addWidget(stage_ig)
-        
-        stage_tt = QPushButton()
-        stage_tt.setIcon(self.get_icon("tiktok.png", "TT"))
-        stage_tt.setIconSize(self.icon_size)
-        stage_tt.setToolTip("Stage to TikTok")
-        stage_tt.clicked.connect(lambda: self.toggle_staged("tiktok"))
-        staging_controls.addWidget(stage_tt)
-        
-        stage_f = QPushButton()
-        stage_f.setIcon(self.get_icon("fansly.png", "F"))
-        stage_f.setIconSize(self.icon_size)
-        stage_f.setToolTip("Stage to Fansly")
-        stage_f.clicked.connect(lambda: self.toggle_staged("fansly"))
-        staging_controls.addWidget(stage_f)
-        
-        staging_controls.addStretch()
-        staging_layout.addLayout(staging_controls)
-        
-        layout.addWidget(staging_group)
-        
-        # Release section
-        release_group = QFrame()
-        release_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        release_layout = QVBoxLayout(release_group)
-        
-        release_label = QLabel("<b>Release to Platforms</b>")
-        release_layout.addWidget(release_label)
-        
-        release_controls = QHBoxLayout()
-        release_controls.addWidget(QLabel("Release selected photos to:"))
-        
-        rel_ig = QPushButton()
-        rel_ig.setIcon(self.get_icon("instagram.png", "IG"))
-        rel_ig.setIconSize(self.icon_size)
-        rel_ig.setToolTip("Release: Instagram")
-        rel_ig.clicked.connect(lambda: self.toggle_release_status("released_instagram"))
-        release_controls.addWidget(rel_ig)
-        
-        rel_tt = QPushButton()
-        rel_tt.setIcon(self.get_icon("tiktok.png", "TT"))
-        rel_tt.setIconSize(self.icon_size)
-        rel_tt.setToolTip("Release: TikTok")
-        rel_tt.clicked.connect(lambda: self.toggle_release_status("released_tiktok"))
-        release_controls.addWidget(rel_tt)
-        
-        rel_f = QPushButton()
-        rel_f.setIcon(self.get_icon("fansly.png", "F"))
-        rel_f.setIconSize(self.icon_size)
-        rel_f.setToolTip("Release: Fansly")
-        rel_f.clicked.connect(lambda: self.toggle_release_status("released_fansly"))
-        release_controls.addWidget(rel_f)
-        
-        release_controls.addStretch()
-        release_layout.addLayout(release_controls)
-        
-        layout.addWidget(release_group)
-        
-        # Manage section
-        manage_group = QFrame()
-        manage_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        manage_layout = QVBoxLayout(manage_group)
-        
-        manage_label = QLabel("<b>Manage</b>")
-        manage_layout.addWidget(manage_label)
-        
-        manage_controls = QHBoxLayout()
-        
-        unstage_btn = QPushButton()
-        unstage_btn.setIcon(self.get_icon("unstage.png", "US"))
-        unstage_btn.setIconSize(self.icon_size)
-        unstage_btn.setToolTip("Unstage: move back to root/<package>")
-        unstage_btn.clicked.connect(self.unstage_selected)
-        manage_controls.addWidget(unstage_btn)
-        
-        pkg_btn = QPushButton()
-        pkg_btn.setIcon(self.get_icon("package.png", "PK"))
-        pkg_btn.setIconSize(self.icon_size)
-        pkg_btn.setToolTip("Manage packages")
-        pkg_btn.clicked.connect(self.manage_packages_dialog)
-        manage_controls.addWidget(pkg_btn)
-        
-        unpkg_btn = QPushButton()
-        unpkg_btn.setIcon(self.get_icon("unpackage.png", "UP"))
-        unpkg_btn.setIconSize(self.icon_size)
-        unpkg_btn.setToolTip("Unpackage: clear package and move to root")
-        unpkg_btn.clicked.connect(self.unpackage_selected)
-        manage_controls.addWidget(unpkg_btn)
-        
-        manage_controls.addStretch()
-        manage_layout.addLayout(manage_controls)
-        
-        layout.addWidget(manage_group)
-        
-        # Placeholder for future: automation, scheduling, upload logs
-        layout.addStretch()
-        
-        coming_soon = QLabel("<i>Coming soon: Automated uploads, scheduling, caption templates, upload history</i>")
-        coming_soon.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(coming_soon)
-        
-        return widget
     
     def create_instagram_tab(self):
-        """Create Instagram posting tab"""
+        """Return the shared Instagram tab widget."""
+        return self.instagram_tab
+    
+    def create_tiktok_tab(self):
+        """Return the shared TikTok tab widget."""
+        return self.tiktok_tab
+    
+    # Notes UI removed from main window; notes are managed in Lightbox and Library column
+    
+    def create_gallery_tab(self):
+        """Return the shared gallery tab widget."""
+        return self.gallery_tab
+    
+    def create_filters_tab(self):
+        """Create filters and search tab"""
         widget = QWidget()
-        layout = QVBoxLayout(widget)
+        main_layout = QVBoxLayout(widget)
         
-        # Header with info
-        header = QLabel("<h3>📸 Instagram Direct Post</h3>")
-        layout.addWidget(header)
-        
-        info = QLabel(
-            "<small><b>Note:</b> This uses Instagram's unofficial API (instagrapi). "
-            "Instagram actively blocks automation attempts. "
-            "For more reliable integration, use Instagram's official Graph API (requires business account).</small>"
-        )
-        info.setObjectName("infoBanner")
+        # Scroll area for filters
         info.setWordWrap(True)
         layout.addWidget(info)
         
@@ -1938,13 +1795,14 @@ class MainWindow(QMainWindow):
         return widget
     
     def create_vocabulary_tab(self):
-        """Create Vocabulary Manager tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Title and info
-        title = QLabel("<h2>Controlled Vocabularies</h2>")
-        layout.addWidget(title)
+        """Return the shared vocabularies tab widget."""
+        return self.vocabularies_tab
+    
+    def create_learning_tab(self):
+        """Return the shared AI learning tab widget."""
+        return self.learning_tab
+    
+    def create_face_matching_tab(self):
         
         info = QLabel("Manage allowed values for each field. AI will only use these values - unknowns will be flagged.")
         info.setWordWrap(True)
