@@ -1,0 +1,54 @@
+/* Sky Light (Blue accent) */
+QMainWindow, QWidget { background-color: #F7F7F7; color: #111827; }
+/* Do not override generic QFrame to avoid breaking custom frames */
+QGroupBox, QDialog, QScrollArea, QTabWidget::pane { background-color: #FFFFFF; border: 1px solid rgba(0,0,0,0.12); }
+QGroupBox::title { color: #6B7280; }
+
+/* Custom panels */
+QLabel#thumbnailPreview, QLabel#thumbnailCell { background: #F3F4F6; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px; }
+QLabel#infoBanner { color: #374151; background: #F3F4F6; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px; padding: 10px; }
+
+/* Inputs */
+QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: #FFFFFF; border: 1px solid rgba(0,0,0,0.12); min-height: 32px; padding: 6px 8px; border-radius: 8px; }
+QLineEdit:hover, QTextEdit:hover, QComboBox:hover { border-color: rgba(0,0,0,0.18); }
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus { border: 2px solid #2563EB; }
+QComboBox::drop-down { width: 24px; }
+
+/* Buttons */
+QPushButton { background: #FFFFFF; color: #111827; border: 1px solid rgba(0,0,0,0.12); min-height: 32px; padding: 6px 12px; border-radius: 8px; }
+QPushButton:hover { background: #F3F4F6; }
+QPushButton:pressed { background: #E5E7EB; }
+QPushButton:disabled { color: rgba(17,24,39,0.38); border-color: rgba(0,0,0,0.12); }
+QPushButton#primaryButton { background: #2563EB; color: #FFFFFF; border: 1px solid #2563EB; }
+QPushButton#primaryButton:hover { background: #1D4ED8; }
+
+/* Tabs */
+QTabBar::tab { color: #6B7280; min-height: 40px; padding: 8px 12px; margin-right: 8px; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+QTabBar::tab:selected { color: #111827; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.12); }
+QTabBar::tab:hover { background: #F3F4F6; }
+
+/* Menus */
+QMenuBar { background: #FFFFFF; }
+QMenu { background: #FFFFFF; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; }
+QMenu::item:selected { background: rgba(37,99,235,0.12); }
+
+/* Status bar */
+QStatusBar { background: #FFFFFF; border-top: 1px solid rgba(0,0,0,0.08); }
+
+/* Scrollbars */
+QScrollBar:vertical { width: 12px; background: transparent; }
+QScrollBar::handle:vertical { background: rgba(0,0,0,0.24); border-radius: 6px; }
+QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.32); }
+QScrollBar:horizontal { height: 12px; background: transparent; }
+QScrollBar::handle:horizontal { background: rgba(0,0,0,0.24); border-radius: 6px; }
+
+/* Tables */
+QHeaderView::section { background: #F3F4F6; border: 1px solid rgba(0,0,0,0.06); min-height: 32px; padding: 6px 12px; }
+QTableWidget::item:selected { background: rgba(37,99,235,0.12); }
+QTableWidget { gridline-color: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.06); }
+QTableWidget::item { background: #FFFFFF; }
+QTableWidget::item:!selected:alternate { background: #F6F7FB; }
+
+/* Windows 11 Fluent metrics (Sky Light only) */
+QGroupBox { border-radius: 8px; padding-top: 16px; margin-top: 12px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 12px 14px; }

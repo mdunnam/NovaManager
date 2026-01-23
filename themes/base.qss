@@ -1,0 +1,53 @@
+/* Base QSS: shared structural styles (no colors) */
+
+/* Typography */
+QMainWindow, QWidget, QDialog, QGroupBox, QTabWidget, QTabBar, QScrollArea,
+QTableWidget, QTableView, QListWidget, QTreeWidget, QLineEdit, QTextEdit,
+QComboBox, QSpinBox, QDoubleSpinBox, QStatusBar, QToolBar, QMenuBar, QMenu,
+QLabel, QPushButton {
+  font-family: Segoe UI, Arial, sans-serif;
+  font-size: 10.5pt; /* Body 14/20 approx */
+}
+
+/* Rounded containers */
+QFrame, QGroupBox, QDialog, QScrollArea, QTabWidget::pane {
+  border-radius: 12px;
+}
+
+/* Rounded inputs */
+QLineEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+/* Buttons */
+QPushButton {
+  border-radius: 10px;
+  padding: 8px 14px;
+}
+
+/* Tabs */
+QTabBar::tab {
+  padding: 8px 14px;
+  margin: 2px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+/* Tables */
+QHeaderView::section { padding: 6px; }
+QTableWidget { gridline-color: palette(midlight); }
+QTableView::item:selected, QTableWidget::item:selected {
+  outline: none;
+}
+
+/* Menus */
+QMenuBar { padding: 4px; }
+QMenu { padding: 6px; }
+QMenu::item { padding: 6px 14px; }
+
+/* Status bar */
+QStatusBar { padding: 4px; }
+
+/* Dialog buttons */
+QDialogButtonBox QPushButton { min-width: 90px; }
