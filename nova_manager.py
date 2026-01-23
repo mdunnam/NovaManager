@@ -1095,40 +1095,16 @@ class MainWindow(QMainWindow):
         """Return the shared gallery tab widget."""
         return self.gallery_tab
     
-    def create_filters_tab(self):
-        """Create filters and search tab"""
-        widget = QWidget()
-        main_layout = QVBoxLayout(widget)
+    def create_tag_cloud(self):
+        """Create tag cloud widget at bottom of app"""
+        widget = QFrame()
+        widget.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
+        widget.setMaximumHeight(120)
         
-        # Scroll area for filters
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 5, 10, 5)
         
-        # Auth section
-        auth_group = QGroupBox("Authentication")
-        auth_group.setObjectName("igAuthGroup")
-        auth_layout = QVBoxLayout()
-        
-        self.ig_status_label = QLabel("Status: Not connected")
-        self.ig_status_label.setStyleSheet("color: red;")
-        auth_layout.addWidget(self.ig_status_label)
-        
-        auth_button_layout = QHBoxLayout()
-        self.ig_auth_btn = QPushButton("Connect Instagram Account")
-        self.ig_auth_btn.clicked.connect(self.connect_instagram)
-        auth_button_layout.addWidget(self.ig_auth_btn)
-        
-        self.ig_logout_btn = QPushButton("Disconnect")
-        self.ig_logout_btn.setEnabled(False)
-        self.ig_logout_btn.clicked.connect(self.disconnect_instagram)
-        auth_button_layout.addWidget(self.ig_logout_btn)
-        auth_button_layout.addStretch()
-        auth_layout.addLayout(auth_button_layout)
-        
-        auth_group.setLayout(auth_layout)
-        layout.addWidget(auth_group)
-        
-        # Content type tabs (Post, Reel, Story, Highlights)
+        # Header with title and refresh button
         self.ig_content_tabs = QTabWidget()
         
         # Post tab
@@ -1804,24 +1780,6 @@ class MainWindow(QMainWindow):
     
     def create_face_matching_tab(self):
         
-        info = QLabel("Manage allowed values for each field. AI will only use these values - unknowns will be flagged.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Field selector
-        field_layout = QHBoxLayout()
-        field_layout.addWidget(QLabel("Field:"))
-        self.vocab_field_selector = QComboBox()
-        self.vocab_field_selector.addItems([
-            'type_of_shot', 'pose', 'facing_direction', 'explicit_level',
-            'color_of_clothing', 'material', 'type_clothing', 'footwear',
-            'interior_exterior', 'location'
-        ])
-        self.vocab_field_selector.currentTextChanged.connect(self.load_vocabulary_for_field)
-        field_layout.addWidget(self.vocab_field_selector)
-        field_layout.addStretch()
-        layout.addLayout(field_layout)
-        
         # Toolbar
         toolbar = QHBoxLayout()
         self.vocab_input = QLineEdit()
@@ -1914,14 +1872,16 @@ class MainWindow(QMainWindow):
     def create_face_matching_tab(self):
         """Return the shared face matching tab widget."""
         return self.face_matching_tab
-        
-        # Thumbnail grid of benchmark photos (persistent, no text labels)
-        self.benchmark_scroll = QScrollArea()
-        self.benchmark_scroll.setWidgetResizable(True)
-        self.benchmark_container = QWidget()
-        self.benchmark_grid = QGridLayout(self.benchmark_container)
-        self.benchmark_grid.setContentsMargins(4, 4, 4, 4)
-        self.benchmark_grid.setSpacing(8)
+    
+    def get_photo_id_from_row(self, row: int) -> int:
+        """Safely extract photo ID from table row using COL_ID constant"""
+        try:
+            id_item = self.photo_table.item(row, self.COL_ID)
+            if id_item:
+                return int(id_item.text())
+        except (ValueError, AttributeError):
+            pass
+        return None
         self.benchmark_scroll.setWidget(self.benchmark_container)
         left_layout.addWidget(self.benchmark_scroll, 1)
         
