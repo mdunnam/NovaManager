@@ -16,12 +16,38 @@ ENV/
 # Databases and local state
 *.db
 nova_photos.db
+*.sqlite*
+*.bak
+*.tmp
 
 # Generated thumbnails/cache
 thumbnail_cache/
+.ollama/
 
 # Logs
 *.log
+
+# Models and large artifacts
+*.onnx
+*.pt
+*.pth
+*.pb
+*.h5
+*.tflite
+*.caffemodel
+*.prototxt
+
+# Packaging/output
+dist/
+build/
+*.egg-info/
+
+# Local configs
+.env
+.env.*
+
+# Optional raw photo ingest folder
+raw_photos/
 
 # OS files
 .DS_Store
