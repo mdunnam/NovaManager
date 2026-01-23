@@ -20,6 +20,7 @@ import hashlib
 import shutil
 
 from ui.gallery_tab import GalleryTab
+from ui.face_matching_tab import FaceMatchingTab
 
 from database import PhotoDatabase
 from ai_analyzer import analyze_image
@@ -623,10 +624,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
         try:
-            print('Creating Face Matching tab...', file=sys.stderr)
-            face_tab = self.create_face_matching_tab()
-            face_tab.layout().addWidget(QLabel('Face Matching Tab Loaded (DEBUG)', parent=face_tab))
-            self.tabs.addTab(face_tab, "Face Matching")
+            self.face_matching_tab = FaceMatchingTab(self)
+            self.tabs.addTab(self.face_matching_tab, "Face Matching")
             print('Face Matching tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Face Matching tab: {e}', file=sys.stderr)
@@ -2079,25 +2078,8 @@ class MainWindow(QMainWindow):
         return widget
     
     def create_face_matching_tab(self):
-        """Create Face Matching tab for similarity checking"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Info section
-        info = QLabel("Upload 5-10 reference photos of the target face. The system will rate all photos in your library 1-5 based on face similarity.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Main content area - split into left (benchmark) and right (log), aligned heights
-        content_layout = QHBoxLayout()
-        
-        # LEFT SIDE: Benchmark photos section (persistent, photos only)
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        
-        benchmark_label = QLabel("<b>Reference Photos</b>")
-        left_layout.addWidget(benchmark_label)
+        """Return the shared face matching tab widget."""
+        return self.face_matching_tab
         
         # Thumbnail grid of benchmark photos (persistent, no text labels)
         self.benchmark_scroll = QScrollArea()
@@ -2206,112 +2188,28 @@ class MainWindow(QMainWindow):
         return widget
     
     def add_benchmark_photos(self):
-        """Add benchmark reference photos for face matching"""
-        files, _ = QFileDialog.getOpenFileNames(
-            self, 
-            "Select Benchmark Reference Photos", 
-            "",
-            "Images (*.jpg *.jpeg *.png)"
-        )
-        
-        if files:
-            added = 0
-            for file in files:
-                if file not in self.benchmark_photos:
-                    self.benchmark_photos.append(file)
-                    added += 1
-            self.save_benchmarks_to_settings()
-            self.render_benchmark_grid()
-            self.statusBar().showMessage(f"Added {added} benchmark photo(s). Total: {len(self.benchmark_photos)}", 3000)
-    
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.add_benchmark_photos()
+
     def clear_benchmark_photos(self):
-        """Clear all benchmark photos"""
-        self.benchmark_photos.clear()
-        self.save_benchmarks_to_settings()
-        # Clear grid
-        while self.benchmark_grid.count():
-            item = self.benchmark_grid.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-        self.statusBar().showMessage("Cleared all benchmark photos", 2000)
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.clear_benchmark_photos()
 
     def save_benchmarks_to_settings(self):
-        """Persist benchmark photo paths in settings"""
-        try:
-            self.settings.setValue("face_benchmarks", ';'.join(self.benchmark_photos))
-        except Exception as e:
-            print(f"Settings save error: {e}")
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.save_benchmarks_to_settings()
 
     def load_benchmarks_from_settings(self):
-        """Load benchmark photo paths from settings"""
-        try:
-            saved = self.settings.value("face_benchmarks", "")
-            if saved:
-                paths = [p for p in str(saved).split(';') if p]
-                self.benchmark_photos = paths
-        except Exception as e:
-            print(f"Settings load error: {e}")
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.load_benchmarks_from_settings()
 
     def render_benchmark_grid(self):
-        """Render thumbnails of benchmark photos in the grid (photos only, no text)"""
-        # Clear existing
-        while self.benchmark_grid.count():
-            item = self.benchmark_grid.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        if not self.benchmark_photos:
-            return
-
-        # Add thumbnails in 5 columns with delete buttons (photos only, compact)
-        cols = 5
-        for idx, path in enumerate(self.benchmark_photos):
-            r, c = divmod(idx, cols)
-            frame = QFrame()
-            frame.setFrameStyle(QFrame.Shape.Panel | QFrame.Shadow.Sunken)
-            v = QVBoxLayout(frame)
-            v.setContentsMargins(2, 2, 2, 2)
-            v.setSpacing(2)
-            
-            # Photo thumbnail
-            img = QLabel()
-            img.setFixedSize(100, 100)
-            img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if os.path.exists(path):
-                pm = QPixmap(path)
-                if not pm.isNull():
-                    img.setPixmap(pm.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-                else:
-                    img.setText("[No Preview]")
-                    img.setStyleSheet("QLabel { font-size: 9px; color: gray; }")
-            else:
-                img.setText("[Missing]")
-                img.setStyleSheet("QLabel { font-size: 9px; color: red; }")
-            img.setToolTip(Path(path).name)
-            v.addWidget(img)
-            
-            # Delete button (small)
-            del_btn = QToolButton()
-            del_btn.setToolTip("Remove from benchmarks")
-            del_btn.setMaximumSize(20, 20)
-            try:
-                del_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
-            except Exception:
-                del_btn.setText("X")
-            del_btn.clicked.connect(lambda _=False, p=path: self.delete_benchmark_path(p))
-            v.addWidget(del_btn)
-            
-            self.benchmark_grid.addWidget(frame, r, c)
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.render_benchmark_grid()
 
     def delete_benchmark_path(self, path):
-        """Remove a benchmark image and update settings"""
-        try:
-            self.benchmark_photos = [p for p in self.benchmark_photos if p != path]
-            self.save_benchmarks_to_settings()
-            self.render_benchmark_grid()
-            self.statusBar().showMessage("Removed benchmark photo", 2000)
-        except Exception as e:
-            print(f"Delete benchmark error: {e}")
+        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
+            self.face_matching_tab.delete_benchmark_path(path)
 
     def get_photo_id_from_row(self, row: int) -> int:
         """Safely extract photo ID from table row using COL_ID constant"""
