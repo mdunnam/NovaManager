@@ -677,18 +677,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"apply_theme error: {e}")
     
-    def init_ui(self):
-        # Main widget and layout
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        main_widget.setLayout(main_layout)
-        # Top section - Folder selection and analysis
-        top_section = self.create_top_section()
-        main_layout.addWidget(top_section)
-        # Tab widget for different views - already created in setup_ui()
-        main_layout.addWidget(self.tabs)
-        self.tabs.setCurrentIndex(0)
+    def create_top_section(self):
         
         # View Menu
         view_menu = self.menuBar().addMenu("&View")
@@ -1105,38 +1094,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 5, 10, 5)
         
         # Header with title and refresh button
-        self.ig_content_tabs = QTabWidget()
-        
-        # Post tab
-        post_tab = self.create_instagram_post_tab()
-        self.ig_content_tabs.addTab(post_tab, "📷 Post")
-        
-        # Reel tab
-        reel_tab = self.create_instagram_reel_tab()
-        self.ig_content_tabs.addTab(reel_tab, "🎬 Reel")
-        
-        # Story tab
-        story_tab = self.create_instagram_story_tab()
-        self.ig_content_tabs.addTab(story_tab, "📖 Story")
-        
-        # Highlights tab
-        highlights_tab = self.create_instagram_highlights_tab()
-        self.ig_content_tabs.addTab(highlights_tab, "⭐ Highlights")
-        
-        layout.addWidget(self.ig_content_tabs)
-        
-        return widget
-    
-    def create_instagram_post_tab(self):
-        """Instagram Post tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Photo preview and selection
-        preview_layout = QHBoxLayout()
-        
-        # Thumbnail preview
-        self.ig_thumbnail_label = QLabel()
         self.ig_thumbnail_label.setObjectName("thumbnailPreview")
         self.ig_thumbnail_label.setFixedSize(200, 200)
         self.ig_thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
