@@ -647,6 +647,11 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating TikTok tab: {e}', file=sys.stderr)
         main_layout.addWidget(self.tabs)
+        
+        # Tag cloud at bottom
+        tag_cloud_widget = self.create_tag_cloud()
+        main_layout.addWidget(tag_cloud_widget)
+        
         self.tabs.setCurrentIndex(0)
 
     def apply_theme(self, theme_name: str):
@@ -2089,16 +2094,20 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, event):
         """Handle middle-click on thumbnail to open file location and swallow the event."""
         try:
-            if obj is self.photo_table.viewport() and event.type() in (
+            # Check if photos_tab exists and has photo_table
+            if not hasattr(self, 'photos_tab') or not hasattr(self.photos_tab, 'photo_table'):
+                return super().eventFilter(obj, event)
+            
+            if obj is self.photos_tab.photo_table.viewport() and event.type() in (
                 QEvent.Type.MouseButtonPress,
                 QEvent.Type.MouseButtonRelease,
                 QEvent.Type.MouseButtonDblClick,
             ):
                 if event.button() == Qt.MouseButton.MiddleButton:
-                    idx = self.photo_table.indexAt(event.pos())
-                    if idx.isValid() and idx.column() == self.COL_THUMBNAIL:
+                    idx = self.photos_tab.photo_table.indexAt(event.pos())
+                    if idx.isValid() and idx.column() == self.photos_tab.COL_THUMBNAIL:
                         row = idx.row()
-                        fp_item = self.photo_table.item(row, self.COL_FILEPATH)
+                        fp_item = self.photos_tab.photo_table.item(row, self.photos_tab.COL_FILEPATH)
                         if fp_item:
                             path = fp_item.text()
                             folder = os.path.dirname(path)
@@ -3916,6 +3925,10 @@ class MainWindow(QMainWindow):
     
     def refresh_tag_cloud(self):
         """Refresh the tag cloud display"""
+        # Check if tag cloud has been created yet
+        if not hasattr(self, 'tag_cloud_layout'):
+            return
+        
         # Clear existing tags
         while self.tag_cloud_layout.count():
             item = self.tag_cloud_layout.takeAt(0)

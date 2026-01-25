@@ -23,7 +23,21 @@ class TikTokTab(QWidget):
         self.controller = controller
         self.tt_media_selected_id = None
         self._build_ui()
-        self.controller.check_api_credentials()
+        self._check_credentials()
+    
+    def _check_credentials(self):
+        """Check if credentials are saved and update UI."""
+        try:
+            if self.controller.db.has_api_credentials("tiktok"):
+                creds = self.controller.db.get_api_credentials("tiktok")
+                username = creds.get("username", "Unknown")
+                self.tt_status_label.setText(f"Status: Connected as @{username}")
+                self.tt_status_label.setStyleSheet("color: green;")
+                self.tt_auth_btn.setEnabled(False)
+                self.tt_logout_btn.setEnabled(True)
+                self.tt_post_btn.setEnabled(True)
+        except Exception as e:
+            print(f"Error checking TikTok credentials: {e}")
 
     def _build_ui(self):
         layout = QVBoxLayout(self)

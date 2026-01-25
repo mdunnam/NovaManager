@@ -25,7 +25,21 @@ class InstagramTab(QWidget):
         self.controller = controller
         self.ig_selected_photo_id = None
         self._build_ui()
-        self.controller.check_api_credentials()
+        self._check_credentials()
+    
+    def _check_credentials(self):
+        """Check if credentials are saved and update UI."""
+        try:
+            if self.controller.db.has_api_credentials("instagram"):
+                creds = self.controller.db.get_api_credentials("instagram")
+                username = creds.get("username", "Unknown")
+                self.ig_status_label.setText(f"Status: Connected as @{username}")
+                self.ig_status_label.setStyleSheet("color: green;")
+                self.ig_auth_btn.setEnabled(False)
+                self.ig_logout_btn.setEnabled(True)
+                self.ig_post_btn.setEnabled(True)
+        except Exception as e:
+            print(f"Error checking Instagram credentials: {e}")
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
