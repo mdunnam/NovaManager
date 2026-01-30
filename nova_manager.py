@@ -556,6 +556,8 @@ class MainWindow(QMainWindow):
         self.settings = QSettings()
         self.analyzer_thread = None
         self.db = PhotoDatabase()
+        self.cache_dir = Path("thumbnail_cache")
+        self.cache_dir.mkdir(exist_ok=True)
         self.init_ui()
     # Library tab column indices - UPDATE THIS MAPPING IF COLUMNS CHANGE
     COL_CHECKBOX = 0
@@ -870,8 +872,18 @@ class MainWindow(QMainWindow):
         browse_btn = QPushButton("Browse")
         browse_btn.clicked.connect(self.browse_folder)
         folder_row.addWidget(browse_btn)
+
+        relink_btn = QPushButton("Relink Paths")
+        relink_btn.setToolTip("Update stored file paths to the selected root folder")
+        relink_btn.clicked.connect(self.relink_filepaths)
+        folder_row.addWidget(relink_btn)
         
         layout.addLayout(folder_row)
+
+        # Restore last folder selection
+        last_folder = self.settings.value("last_folder", "")
+        if last_folder:
+            self.folder_input.setText(last_folder)
         
         # Options row
         options_row = QHBoxLayout()
@@ -3059,12 +3071,118 @@ class MainWindow(QMainWindow):
         if folder:
             self.folder_input.setText(folder)
             self.save_last_folder(folder)
+            # Optionally refresh UI immediately
+            self.refresh_photos()
     
     def save_last_folder(self, folder):
         """Save the last used folder to settings"""
         self.settings.setValue("last_folder", folder)
         self.settings.sync()  # Force write to disk
         print(f"Saved folder to settings: {folder}")
+
+    def relink_filepaths(self):
+        """Update stored photo paths to use the currently selected root folder."""
+        new_root = self.folder_input.text().strip()
+        if not new_root or not os.path.isdir(new_root):
+            QMessageBox.warning(self, "Invalid Folder", "Please select a valid root folder before relinking.")
+            return
+
+        photos = self.db.get_all_photos()
+        if not photos:
+            QMessageBox.information(self, "No Photos", "Database has no photos to relink.")
+            return
+
+        # Determine old root
+        old_root = self.settings.value("last_folder", "")
+        # Try deriving a common path across stored filepaths (case-insensitive), tolerate different drives
+        if not old_root:
+            try:
+                norm_paths = [os.path.normcase(os.path.normpath(p["filepath"])) for p in photos if p.get("filepath")]
+                if norm_paths:
+                    # String-based common prefix, then trim to the last path separator
+                    cp = os.path.commonprefix(norm_paths)
+                    last_sep_idx = max(cp.rfind("/"), cp.rfind("\\"))
+                    if last_sep_idx > 0:
+                        old_root = cp[:last_sep_idx]
+            except Exception:
+                old_root = ""
+
+        # If still unknown, ask user to select previous root
+        if not old_root:
+            QMessageBox.information(
+                self,
+                "Select Previous Root",
+                "Could not auto-detect the previous root folder.\n\n"
+                "Please select the folder that previously contained your photos (the old location)."
+            )
+            chosen = QFileDialog.getExistingDirectory(self, "Select Previous Root Folder", "")
+            if chosen:
+                old_root = chosen
+            else:
+                QMessageBox.warning(self, "Unable to Detect Old Root", "Could not determine the previous root folder for stored paths.")
+                return
+
+        if os.path.normcase(os.path.normpath(old_root)) == os.path.normcase(os.path.normpath(new_root)):
+            QMessageBox.information(self, "No Change", "The selected folder matches the current root; no relink needed.")
+            return
+
+        # Optional: build filename index under new_root for fallback matching
+        fname_index = {}
+        try:
+            for root, _dirs, files in os.walk(new_root):
+                for f in files:
+                    fname_index.setdefault(f.lower(), os.path.join(root, f))
+        except Exception:
+            fname_index = {}
+
+        def try_relative(fp_str: str, old_root_str: str):
+            # Case-insensitive prefix check for Windows
+            a = os.path.normcase(os.path.normpath(fp_str))
+            b = os.path.normcase(os.path.normpath(old_root_str))
+            if a.startswith(b):
+                rel = a[len(b):].lstrip("/\\")
+                return rel
+            return None
+
+        updated = 0
+        by_name = 0
+        skipped = 0
+        for photo in photos:
+            fp = photo.get("filepath")
+            if not fp:
+                skipped += 1
+                continue
+
+            rel = try_relative(fp, old_root)
+            new_path = None
+            if rel:
+                candidate = os.path.join(new_root, rel)
+                if os.path.exists(candidate):
+                    new_path = candidate
+            # Fallback: match by filename anywhere under new_root
+            if not new_path:
+                fname = os.path.basename(fp).lower()
+                match = fname_index.get(fname)
+                if match and os.path.exists(match):
+                    new_path = match
+                    by_name += 1
+
+            if not new_path:
+                skipped += 1
+                continue
+
+            self.db.update_photo_metadata(photo["id"], {"filepath": str(new_path), "filename": os.path.basename(new_path)})
+            updated += 1
+
+        self.save_last_folder(new_root)
+        self.refresh_photos()
+        self.gallery_tab.refresh()
+
+        QMessageBox.information(
+            self,
+            "Relink Complete",
+            f"Updated {updated} photo paths. {by_name} matched by filename. Skipped {skipped}."
+        )
     
     def start_analysis(self):
         """Start analyzing images"""
@@ -3079,9 +3197,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         
         self.analyzer_thread = AnalyzerThread(
-            folder, 
+            folder,
             self.subfolder_checkbox.isChecked(),
-            "H:\\NovaApp\\nova_photos.db"  # Pass path instead of connection
+            self.db.db_path  # Use configured DB path
         )
         self.analyzer_thread.progress.connect(self.update_progress)
         self.analyzer_thread.photo_analyzed.connect(self.add_photo_to_table)
