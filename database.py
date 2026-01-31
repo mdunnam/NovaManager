@@ -53,11 +53,14 @@ class PhotoDatabase:
     def ensure_columns(self):
         """Ensure new columns exist in existing databases"""
         try:
-            # Check for face_similarity column
+            # Check for face_similarity and face_match_rating columns
             self.cursor.execute("PRAGMA table_info(photos)")
             cols = [row['name'] for row in self.cursor.fetchall()]
             if 'face_similarity' not in cols:
                 self.cursor.execute("ALTER TABLE photos ADD COLUMN face_similarity INTEGER DEFAULT 0")
+                self.conn.commit()
+            if 'face_match_rating' not in cols:
+                self.cursor.execute("ALTER TABLE photos ADD COLUMN face_match_rating INTEGER DEFAULT 0")
                 self.conn.commit()
         except Exception as e:
             print(f"Warning: could not ensure columns: {e}")
@@ -234,6 +237,11 @@ class PhotoDatabase:
             query = f"UPDATE photos SET {', '.join(fields)} WHERE id = ?"
             self.cursor.execute(query, values)
             self.conn.commit()
+    
+    def update_photo(self, photo_id, **kwargs):
+        """Update photo with keyword arguments (convenience wrapper)"""
+        if kwargs:
+            self.update_photo_metadata(photo_id, kwargs)
 
     # --- Package helpers ---
     def get_packages(self, photo_id):

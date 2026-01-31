@@ -3,6 +3,8 @@ Face Matching tab extracted from the monolithic main window.
 """
 import os
 from pathlib import Path
+from face_matcher_v2 import FaceMatcherV2
+from face_matcher_deepface import FaceMatcherDeepFace
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -34,10 +36,13 @@ class FaceMatchingTab(QWidget):
         super().__init__()
         self.controller = controller
         self.benchmark_photos = []
+        self.face_matcher = None
+        self.matcher_type = "opencv"  # Default to OpenCV
         self._build_ui()
         self.load_benchmarks_from_settings()
         self.render_benchmark_grid()
         self.load_face_similarity_results()
+        self._initialize_matcher()
 
     # UI builders
     def _build_ui(self):
@@ -49,6 +54,22 @@ class FaceMatchingTab(QWidget):
         )
         info.setWordWrap(True)
         layout.addWidget(info)
+
+        # Face matcher selection
+        matcher_layout = QHBoxLayout()
+        matcher_layout.addWidget(QLabel("<b>Face Matcher:</b>"))
+        
+        self.matcher_combo = QComboBox()
+        self.matcher_combo.addItem("OpenCV (Fast, Lightweight)", "opencv")
+        self.matcher_combo.addItem("DeepFace (Most Accurate)", "deepface")
+        self.matcher_combo.currentIndexChanged.connect(self._on_matcher_changed)
+        self.matcher_combo.setToolTip(
+            "OpenCV: Fast, lightweight, good for most use cases\n"
+            "DeepFace: Most accurate, requires TensorFlow (first run downloads ~100MB model)"
+        )
+        matcher_layout.addWidget(self.matcher_combo)
+        matcher_layout.addStretch()
+        layout.addLayout(matcher_layout)
 
         content_layout = QHBoxLayout()
 
@@ -259,14 +280,87 @@ class FaceMatchingTab(QWidget):
             print(f"Delete benchmark error: {exc}")
 
     def run_analysis(self):
-        """Stub for AI face matching analysis (to be implemented)."""
+        """Run face matching analysis on all photos in library."""
         self.face_log_output.clear()
         self.face_log_output.append("[INFO] Face matching analysis started...")
+        
         if not self.benchmark_photos:
             self.face_log_output.append("[ERROR] No benchmark photos loaded. Please add reference photos first.")
+            QMessageBox.warning(self, "No Benchmarks", "Please add reference photos before running analysis.")
             return
-        self.face_log_output.append(f"[INFO] Loaded {len(self.benchmark_photos)} benchmark(s)")
-        self.face_log_output.append("[INFO] Analysis complete.")
+        
+        try:
+            # Initialize matcher if needed
+            if self.face_matcher is None:
+                self._initialize_matcher()
+            
+            # Clear and reload benchmarks
+            self.face_log_output.append(f"[INFO] Loading {len(self.benchmark_photos)} benchmark(s)...")
+            self.face_matcher.clear_benchmarks()
+            
+            for idx, benchmark_path in enumerate(self.benchmark_photos, 1):
+                if os.path.exists(benchmark_path):
+                    success = self.face_matcher.add_benchmark(benchmark_path, name=f"Benchmark_{idx}")
+                    if success:
+                        self.face_log_output.append(f"[OK] Loaded benchmark {idx}/{len(self.benchmark_photos)}")
+                    else:
+                        self.face_log_output.append(f"[WARN] No face detected in benchmark {idx}")
+                else:
+                    self.face_log_output.append(f"[ERROR] Benchmark file not found: {benchmark_path}")
+            
+            # Get all photos from database
+            self.face_log_output.append("[INFO] Fetching photos from database...")
+            photos = self.controller.db.get_all_photos()
+            self.face_log_output.append(f"[INFO] Found {len(photos)} photos to analyze")
+            
+            # Analyze each photo
+            analyzed = 0
+            rated = 0
+            for idx, photo in enumerate(photos, 1):
+                photo_id = photo['id']
+                filepath = photo['filepath']
+                
+                if not os.path.exists(filepath):
+                    continue
+                
+                # Compare face
+                details = self.face_matcher.compare_face(filepath, return_details=True)
+                
+                if 'error' not in details:
+                    rating = details['rating']
+                    similarity = details.get('best_similarity', 0)
+                    
+                    # Update database with rating
+                    self.controller.db.update_photo(photo_id, face_match_rating=rating)
+                    
+                    if rating > 0:
+                        rated += 1
+                        self.face_log_output.append(
+                            f"[{idx}/{len(photos)}] {Path(filepath).name}: {rating} stars (sim: {similarity:.3f})"
+                        )
+                
+                analyzed += 1
+                
+                # Update progress every 10 photos
+                if analyzed % 10 == 0:
+                    self.face_log_output.append(f"[PROGRESS] Analyzed {analyzed}/{len(photos)} photos...")
+                    self.face_log_output.repaint()
+            
+            self.face_log_output.append(f"\n[COMPLETE] Analysis finished!")
+            self.face_log_output.append(f"[STATS] Analyzed: {analyzed}, Rated: {rated}")
+            
+            # Reload results
+            self.load_face_similarity_results()
+            
+            QMessageBox.information(
+                self, 
+                "Analysis Complete", 
+                f"Analyzed {analyzed} photos.\n{rated} photos received ratings."
+            )
+            
+        except Exception as e:
+            self.face_log_output.append(f"[ERROR] Analysis failed: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Analysis failed: {str(e)}")
 
     def apply_filter(self):
         """Apply rating filter to results table."""
@@ -281,8 +375,64 @@ class FaceMatchingTab(QWidget):
             return
 
     def load_face_similarity_results(self):
-        """Load persisted analysis results (placeholder)."""
-        pass
+        """Load persisted analysis results from database."""
+        try:
+            # Get all photos with face match ratings
+            photos = self.controller.db.get_all_photos()
+            
+            # Filter to only show rated photos
+            rated_photos = [p for p in photos if p.get('face_match_rating', 0) > 0]
+            
+            self.face_results_table.setRowCount(0)
+            self.face_results_table.setSortingEnabled(False)
+            
+            for photo in rated_photos:
+                row = self.face_results_table.rowCount()
+                self.face_results_table.insertRow(row)
+                
+                # ID
+                id_item = QTableWidgetItem(str(photo['id']))
+                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.face_results_table.setItem(row, 0, id_item)
+                
+                # Thumbnail
+                thumb_label = QLabel()
+                thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                if os.path.exists(photo['filepath']):
+                    pixmap = QPixmap(photo['filepath'])
+                    if not pixmap.isNull():
+                        thumb_label.setPixmap(
+                            pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        )
+                self.face_results_table.setCellWidget(row, 1, thumb_label)
+                
+                # Filename
+                filename_item = QTableWidgetItem(Path(photo['filepath']).name)
+                self.face_results_table.setItem(row, 2, filename_item)
+                
+                # Rating
+                rating = photo.get('face_match_rating', 0)
+                rating_item = QTableWidgetItem("⭐" * rating)
+                rating_item.setData(Qt.ItemDataRole.UserRole, rating)
+                rating_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.face_results_table.setItem(row, 3, rating_item)
+                
+                # Confidence (placeholder)
+                confidence_item = QTableWidgetItem("-")
+                confidence_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.face_results_table.setItem(row, 4, confidence_item)
+                
+                # Flag
+                flag = "✓" if photo.get('flagged', False) else ""
+                flag_item = QTableWidgetItem(flag)
+                flag_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.face_results_table.setItem(row, 5, flag_item)
+            
+            self.face_results_table.setSortingEnabled(True)
+            self.face_results_table.sortItems(3, Qt.SortOrder.DescendingOrder)  # Sort by rating
+            
+        except Exception as e:
+            print(f"Error loading face similarity results: {e}")
 
     def open_photo_from_results(self):
         """Open photo from results table in lightbox."""
@@ -302,3 +452,41 @@ class FaceMatchingTab(QWidget):
             self.save_benchmarks_to_settings()
             self.render_benchmark_grid()
             self.face_results_table.setRowCount(0)
+            
+            # Reset all face match ratings in database
+            try:
+                photos = self.controller.db.get_all_photos()
+                for photo in photos:
+                    self.controller.db.update_photo(photo['id'], face_match_rating=0)
+                if self.controller.statusBar():
+                    self.controller.statusBar().showMessage("Cleared all face match results", 3000)
+            except Exception as e:
+                print(f"Error clearing results: {e}")
+    
+    def _initialize_matcher(self):
+        """Initialize the selected face matcher."""
+        try:
+            self.matcher_type = self.matcher_combo.currentData()
+            
+            if self.matcher_type == "deepface":
+                self.face_log_output.append("[INFO] Initializing DeepFace matcher (Facenet model)...")
+                self.face_matcher = FaceMatcherDeepFace(
+                    model_name="Facenet",
+                    detector_backend="opencv"
+                )
+                self.face_log_output.append("[OK] DeepFace matcher initialized")
+            else:
+                self.face_log_output.append("[INFO] Initializing OpenCV matcher...")
+                self.face_matcher = FaceMatcherV2(confidence_threshold=0.5)
+                self.face_log_output.append("[OK] OpenCV matcher initialized")
+                
+        except Exception as e:
+            self.face_log_output.append(f"[ERROR] Failed to initialize matcher: {str(e)}")
+            QMessageBox.critical(self, "Initialization Error", f"Failed to initialize face matcher:\n{str(e)}")
+    
+    def _on_matcher_changed(self):
+        """Handle face matcher selection change."""
+        self._initialize_matcher()
+        if self.controller.statusBar():
+            matcher_name = self.matcher_combo.currentText()
+            self.controller.statusBar().showMessage(f"Switched to {matcher_name}", 3000)
