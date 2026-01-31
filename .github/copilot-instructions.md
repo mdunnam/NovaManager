@@ -3,7 +3,7 @@
 ## Big Picture Architecture
 - **Main App:** `nova_manager.py` (PyQt6 GUI) orchestrates all workflows.
 - **Core Modules:** Located in `core/` folder:
-  - `database.py` - SQLite database management (`nova_photos.db`)
+  - `database.py` - SQLite database management (stores data in `data/nova_photos.db`)
   - `ai_analyzer.py` - Ollama (LLaVA model) for image analysis
   - `face_matcher_v2.py` - OpenCV-based face matching (fast, lightweight)
   - `face_matcher_deepface.py` - DeepFace face matching (most accurate)
@@ -17,7 +17,7 @@
   - `pip install -r requirements.txt`
   - Install Ollama and pull LLaVA: `ollama pull llava`
 - **Run app:** `python nova_manager.py`
-- **Database location:** All metadata is stored in `nova_photos.db` in the project root.
+- **Database location:** All metadata is stored in `data/nova_photos.db` (auto-created on first run).
 - **Testing:** Run individual test files from root (e.g., `python tests/test_face_matcher_v2.py`)
 
 ## Project-Specific Conventions

@@ -15,6 +15,9 @@ ENV/
 
 # Databases and local state
 *.db
+data/*.db
+data/*.sqlite*
+!data/README.md
 nova_photos.db
 test.db
 *.sqlite*

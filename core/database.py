@@ -34,12 +34,14 @@ class CredentialEncryption:
             return ""
 
 class PhotoDatabase:
-    def __init__(self, db_path="nova_photos.db"):
+    def __init__(self, db_path="data/nova_photos.db"):
         """Initialize database connection"""
         self.db_path = db_path
         self.conn = None
         self.cursor = None
         self.encryption = CredentialEncryption()
+        # Ensure data directory exists
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.connect()
         self.create_tables()
     

@@ -1,7 +1,7 @@
 """Test script to verify tag storage"""
 from core.database import PhotoDatabase
 
-db = PhotoDatabase("H:\\NovaApp\\nova_photos.db")
+db = PhotoDatabase("data/nova_photos.db")
 
 # Get first photo
 photos = db.get_all_photos()

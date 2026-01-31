@@ -806,7 +806,7 @@ class MainWindow(QMainWindow):
         info_group = QGroupBox("Database Information")
         info_layout = QVBoxLayout()
         
-        db_path_label = QLabel(f"Database: H:\\NovaApp\\nova_photos.db")
+        db_path_label = QLabel(f"Database: data/nova_photos.db")
         db_path_label.setStyleSheet("color: gray; font-size: 9px;")
         info_layout.addWidget(db_path_label)
         
