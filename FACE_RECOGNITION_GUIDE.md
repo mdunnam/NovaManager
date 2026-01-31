@@ -16,8 +16,8 @@ pip install opencv-python opencv-contrib-python numpy
 ```
 
 **What you need:**
-- `deploy.prototxt` (already in your workspace)
-- `res10_300x300_ssd_iter_140000.caffemodel` (already in your workspace)
+- `models/deploy.prototxt` (already in your workspace)
+- `models/res10_300x300_ssd_iter_140000.caffemodel` (already in your workspace)
 
 **Usage:**
 ```python

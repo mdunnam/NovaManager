@@ -16,12 +16,18 @@ ENV/
 # Databases and local state
 *.db
 nova_photos.db
+test.db
 *.sqlite*
 *.bak
 *.tmp
 
 # Generated thumbnails/cache
 thumbnail_cache/
+
+# Test outputs
+tests/*.db
+tests/output/
+tests/temp/
 .ollama/
 
 # Logs

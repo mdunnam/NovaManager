@@ -9,8 +9,8 @@ class FaceMatcher:
     def __init__(self):
         # Load OpenCV's DNN face detector
         self.face_net = cv2.dnn.readNetFromCaffe(
-            str(Path(__file__).parent / "deploy.prototxt"),
-            str(Path(__file__).parent / "res10_300x300_ssd_iter_140000.caffemodel")
+            str(Path(__file__).parent / "models" / "deploy.prototxt"),
+            str(Path(__file__).parent / "models" / "res10_300x300_ssd_iter_140000.caffemodel")
         )
         self.benchmark_descriptors = []
     

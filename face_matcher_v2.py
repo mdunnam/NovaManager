@@ -27,8 +27,8 @@ class FaceMatcherV2:
         
         # Load OpenCV's DNN face detector
         model_dir = Path(__file__).parent
-        prototxt = model_dir / "deploy.prototxt"
-        caffemodel = model_dir / "res10_300x300_ssd_iter_140000.caffemodel"
+        prototxt = model_dir / "models" / "deploy.prototxt"
+        caffemodel = model_dir / "models" / "res10_300x300_ssd_iter_140000.caffemodel"
         
         if not prototxt.exists() or not caffemodel.exists():
             raise FileNotFoundError(
