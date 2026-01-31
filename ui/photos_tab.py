@@ -443,7 +443,7 @@ class PhotosTab(QWidget):
 
     def reanalyze_selected(self):
         """Trigger re-analysis of selected photos."""
-        from database import ReanalyzerThread
+        from core.database import ReanalyzerThread
 
         target_ids = self.get_target_photo_ids()
         if not target_ids:

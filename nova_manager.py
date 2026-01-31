@@ -29,8 +29,8 @@ from ui.learning_tab import AILearningTab
 from ui.instagram_tab import InstagramTab
 from ui.tiktok_tab import TikTokTab
 
-from database import PhotoDatabase
-from ai_analyzer import analyze_image
+from core.database import PhotoDatabase
+from core.ai_analyzer import analyze_image
 
 
 class PhotoPickerDialog(QDialog):

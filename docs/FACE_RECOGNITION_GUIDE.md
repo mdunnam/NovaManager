@@ -59,7 +59,7 @@ pip install deepface tf-keras tensorflow opencv-python
 
 **Usage:**
 ```python
-from face_matcher_deepface import FaceMatcherDeepFace
+from core.face_matcher_deepface import FaceMatcherDeepFace
 
 # Initialize with Facenet (best balance of speed/accuracy)
 matcher = FaceMatcherDeepFace(
@@ -142,9 +142,9 @@ To integrate with your existing `nova_manager.py`:
 
 1. **Import the matcher** (choose one):
 ```python
-from face_matcher_v2 import FaceMatcherV2 as FaceMatcher
+from core.face_matcher_v2 import FaceMatcherV2 as FaceMatcher
 # OR
-from face_matcher_deepface import FaceMatcherDeepFace as FaceMatcher
+from core.face_matcher_deepface import FaceMatcherDeepFace as FaceMatcher
 ```
 
 2. **Initialize in your app:**

@@ -1,7 +1,7 @@
 """
 Test script for DeepFace face matcher
 """
-from face_matcher_deepface import FaceMatcherDeepFace
+from core.face_matcher_deepface import FaceMatcherDeepFace
 from pathlib import Path
 import logging
 

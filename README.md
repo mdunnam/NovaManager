@@ -40,7 +40,25 @@ python nova_manager.py
 ## Database
 
 The application stores all metadata in a SQLite database at:
-`H:\NovaApp\nova_photos.db`
+`nova_photos.db` (in project root)
+
+## Project Structure
+
+```
+NovaApp/
+├── nova_manager.py          # Main application entry point
+├── core/                    # Core business logic
+│   ├── database.py         # SQLite database management
+│   ├── ai_analyzer.py      # AI-powered image analysis
+│   ├── face_matcher_v2.py  # OpenCV face matching
+│   └── face_matcher_deepface.py  # DeepFace face matching
+├── ui/                      # PyQt6 UI components
+├── models/                  # AI model files
+├── scripts/                 # Utility scripts
+├── tests/                   # Test files
+├── docs/                    # Documentation
+└── themes/                  # UI themes
+```
 
 ## Fields Tracked
 

@@ -3,8 +3,8 @@ Face Matching tab extracted from the monolithic main window.
 """
 import os
 from pathlib import Path
-from face_matcher_v2 import FaceMatcherV2
-from face_matcher_deepface import FaceMatcherDeepFace
+from core.face_matcher_v2 import FaceMatcherV2
+from core.face_matcher_deepface import FaceMatcherDeepFace
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,

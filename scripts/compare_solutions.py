@@ -33,7 +33,7 @@ def compare_solutions(test_image1, test_image2=None):
     print("\n📊 Testing OpenCV Solution (face_matcher_v2.py)")
     print("-" * 70)
     try:
-        from face_matcher_v2 import FaceMatcherV2
+        from core.face_matcher_v2 import FaceMatcherV2
         
         start = time.time()
         matcher_cv = FaceMatcherV2()
@@ -79,7 +79,7 @@ def compare_solutions(test_image1, test_image2=None):
     print("\n📊 Testing DeepFace Solution (face_matcher_deepface.py)")
     print("-" * 70)
     try:
-        from face_matcher_deepface import FaceMatcherDeepFace
+        from core.face_matcher_deepface import FaceMatcherDeepFace
         
         print("Initializing (may download models on first run)...")
         start = time.time()

@@ -1,7 +1,7 @@
 """
 Test script for FaceMatcherV2
 """
-from face_matcher_v2 import FaceMatcherV2
+from core.face_matcher_v2 import FaceMatcherV2
 from pathlib import Path
 import logging
 

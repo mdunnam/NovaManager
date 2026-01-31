@@ -1,5 +1,5 @@
 """Test script to verify tag storage"""
-from database import PhotoDatabase
+from core.database import PhotoDatabase
 
 db = PhotoDatabase("H:\\NovaApp\\nova_photos.db")
 

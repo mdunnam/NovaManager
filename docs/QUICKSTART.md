@@ -50,7 +50,7 @@ python compare_solutions.py "path/to/your/photo.jpg"
 
 ### OpenCV (Lightweight):
 ```python
-from face_matcher_v2 import FaceMatcherV2
+from core.face_matcher_v2 import FaceMatcherV2
 
 matcher = FaceMatcherV2()
 matcher.add_benchmark("benchmark_photo.jpg", name="Nova")
@@ -59,7 +59,7 @@ rating = matcher.compare_face("library_photo.jpg")  # Returns 1-5
 
 ### DeepFace (Most Accurate):
 ```python
-from face_matcher_deepface import FaceMatcherDeepFace
+from core.face_matcher_deepface import FaceMatcherDeepFace
 
 matcher = FaceMatcherDeepFace(model_name="Facenet")
 matcher.add_benchmark("benchmark_photo.jpg", name="Nova")
@@ -130,9 +130,9 @@ Replace your current face matching code with:
 
 ```python
 # At the top of your file
-from face_matcher_deepface import FaceMatcherDeepFace as FaceMatcher
+from core.face_matcher_deepface import FaceMatcherDeepFace as FaceMatcher
 # OR
-from face_matcher_v2 import FaceMatcherV2 as FaceMatcher
+from core.face_matcher_v2 import FaceMatcherV2 as FaceMatcher
 
 # In your class
 def __init__(self):
