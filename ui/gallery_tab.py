@@ -28,6 +28,8 @@ class GalleryTab(QWidget):
         super().__init__()
         self.controller = controller
         self.current_gallery_photo_id = None
+        self.selected_gallery_photo_id = None
+        self._thumbnail_frames = {}
         self._build_ui()
 
     # UI builders
@@ -146,6 +148,7 @@ class GalleryTab(QWidget):
         self.refresh_with_photos(photos)
 
     def refresh_with_photos(self, photos):
+        self._thumbnail_frames = {}
         while self.gallery_grid.count():
             item = self.gallery_grid.takeAt(0)
             if item.widget():
@@ -172,11 +175,15 @@ class GalleryTab(QWidget):
             thumb_widget = self._create_thumbnail(photo, thumb_size)
             self.gallery_grid.addWidget(thumb_widget, row, col)
 
+        self._update_thumbnail_selection_styles()
+
     def _create_thumbnail(self, photo, size):
         frame = QFrame()
         frame.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         frame.setLineWidth(2)
         frame.setCursor(Qt.CursorShape.PointingHandCursor)
+        frame.setProperty("photo_id", photo['id'])
+        self._thumbnail_frames[photo['id']] = frame
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -210,27 +217,52 @@ class GalleryTab(QWidget):
         info_label.setStyleSheet("QLabel { font-size: 10px; }")
         layout.addWidget(info_label)
 
-        frame.mousePressEvent = lambda event, fp=photo['filepath'], pid=photo['id']: self._handle_thumbnail_click(event, fp, pid)
+        frame.mousePressEvent = lambda event, p=photo: self._handle_thumbnail_click(event, p)
+        frame.mouseDoubleClickEvent = lambda event, fp=photo['filepath'], pid=photo['id']: self._handle_thumbnail_double_click(event, fp, pid)
         return frame
 
-    def _handle_thumbnail_click(self, event, filepath, photo_id):
+    def _handle_thumbnail_click(self, event, photo):
         try:
             if event.button() == Qt.MouseButton.MiddleButton:
-                folder = os.path.dirname(filepath)
+                folder = os.path.dirname(photo['filepath'])
                 if folder and os.path.isdir(folder):
                     os.startfile(folder)
                 event.accept()
                 return
             if event.button() == Qt.MouseButton.LeftButton:
-                self.controller.show_full_image(filepath, photo_id)
+                self.selected_gallery_photo_id = photo['id']
+                self.show_details(photo)
+                self._update_thumbnail_selection_styles()
                 event.accept()
                 return
         except Exception as exc:
             print(f"gallery thumbnail click error: {exc}")
         event.ignore()
 
+    def _handle_thumbnail_double_click(self, event, filepath, photo_id):
+        try:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.controller.show_full_image(filepath, photo_id)
+                event.accept()
+                return
+        except Exception as exc:
+            if hasattr(self.controller, "log_editor_error"):
+                self.controller.log_editor_error("gallery_thumbnail_double_click", exc)
+            print(f"gallery thumbnail double-click error: {exc}")
+        event.ignore()
+
+    def _update_thumbnail_selection_styles(self):
+        selected = self.selected_gallery_photo_id
+        for photo_id, frame in self._thumbnail_frames.items():
+            if photo_id == selected:
+                frame.setStyleSheet("QFrame { border: 2px solid #3da5ff; }")
+            else:
+                frame.setStyleSheet("")
+
     def show_details(self, photo):
         self.current_gallery_photo_id = photo['id']
+        self.selected_gallery_photo_id = photo['id']
+        self._update_thumbnail_selection_styles()
         self.gallery_id_label.setText(f"{photo['id']:06d}")
         self.gallery_filepath_label.setText(photo['filepath'] or '')
         self.gallery_type.setText(photo['type_of_shot'] or '')

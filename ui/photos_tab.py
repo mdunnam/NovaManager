@@ -2,6 +2,7 @@
 Photos/Library tab extracted from the monolithic main window.
 """
 import os
+import json
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QHeaderView,
     QAbstractItemView,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
@@ -54,7 +56,11 @@ class PhotosTab(QWidget):
         self.persistent_selected_ids = set()
         self.thumbnail_sizes = {"off": 0, "small": 50, "medium": 100, "large": 150}
         self.current_thumb_size = "medium"
+        self._batch_undo_stack = []
+        self._max_batch_undo = 5
+        self._custom_smart_presets = []
         self._build_ui()
+        self._load_custom_smart_presets()
         self.refresh()
 
     def _build_ui(self):
@@ -84,17 +90,118 @@ class PhotosTab(QWidget):
         train_ai_btn.clicked.connect(self.reanalyze_selected)
         toolbar.addWidget(train_ai_btn)
 
+        batch_retouch_btn = QPushButton("Batch Retouch")
+        batch_retouch_btn.setToolTip("Apply AI blemish retouch to checked/selected photos")
+        batch_retouch_btn.clicked.connect(self.controller.batch_ai_retouch_selected)
+        toolbar.addWidget(batch_retouch_btn)
+
+        test_retouch_btn = QPushButton("Test 1 Photo")
+        test_retouch_btn.setToolTip("Run AI blemish retouch on one checked/selected photo")
+        test_retouch_btn.clicked.connect(self.controller.batch_ai_retouch_test_one)
+        toolbar.addWidget(test_retouch_btn)
+
+        preset_subtle_btn = QPushButton("Subtle")
+        preset_subtle_btn.setToolTip("Batch preset: telea, radius 2, padding 1")
+        preset_subtle_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("subtle"))
+        toolbar.addWidget(preset_subtle_btn)
+
+        preset_balanced_btn = QPushButton("Balanced")
+        preset_balanced_btn.setToolTip("Batch preset: telea, radius 3, padding 2")
+        preset_balanced_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("balanced"))
+        toolbar.addWidget(preset_balanced_btn)
+
+        preset_strong_btn = QPushButton("Strong")
+        preset_strong_btn.setToolTip("Batch preset: ns, radius 5, padding 3")
+        preset_strong_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("strong"))
+        toolbar.addWidget(preset_strong_btn)
+
+        self.batch_settings_label = QLabel()
+        self.batch_settings_label.setStyleSheet("color: #d0d0d0;")
+        toolbar.addWidget(self.batch_settings_label)
+        self._refresh_batch_settings_label()
+
+        revert_retouch_btn = QPushButton("Revert Retouch")
+        revert_retouch_btn.setToolTip("Revert last overwrite retouch for checked/selected photos")
+        revert_retouch_btn.clicked.connect(self.controller.revert_last_retouch_selected)
+        toolbar.addWidget(revert_retouch_btn)
+
+        history_btn = QPushButton("Retouch History")
+        history_btn.setToolTip("View retouch audit history and revert a selected entry")
+        history_btn.clicked.connect(self.controller.open_retouch_history_dialog)
+        toolbar.addWidget(history_btn)
+
         toolbar.addStretch()
 
         toolbar.addWidget(QLabel("Batch Actions:"))
         self.batch_package = QLineEdit()
         self.batch_package.setPlaceholderText("Package name...")
-        self.batch_package.setMaximumWidth(200)
+        self.batch_package.setMaximumWidth(160)
         toolbar.addWidget(self.batch_package)
 
         apply_package_btn = QPushButton("Set Package")
         apply_package_btn.clicked.connect(self.apply_package)
         toolbar.addWidget(apply_package_btn)
+
+        self.batch_status = QComboBox()
+        self.batch_status.addItems(["Raw", "Needs Edit", "Ready", "Released"])
+        self.batch_status.setMaximumWidth(120)
+        toolbar.addWidget(self.batch_status)
+
+        apply_status_quick_btn = QPushButton("Set Status")
+        apply_status_quick_btn.clicked.connect(self.apply_quick_status)
+        toolbar.addWidget(apply_status_quick_btn)
+
+        self.batch_tags = QLineEdit()
+        self.batch_tags.setPlaceholderText("Tags to append (comma-separated)")
+        self.batch_tags.setMaximumWidth(210)
+        toolbar.addWidget(self.batch_tags)
+
+        append_tags_btn = QPushButton("Append Tags")
+        append_tags_btn.clicked.connect(self.append_tags)
+        toolbar.addWidget(append_tags_btn)
+
+        self.batch_notes = QLineEdit()
+        self.batch_notes.setPlaceholderText("Notes to append")
+        self.batch_notes.setMaximumWidth(200)
+        toolbar.addWidget(self.batch_notes)
+
+        append_notes_btn = QPushButton("Append Notes")
+        append_notes_btn.clicked.connect(self.append_notes)
+        toolbar.addWidget(append_notes_btn)
+
+        self.smart_preset_combo = QComboBox()
+        self.smart_preset_combo.addItems([
+            "Raw -> Needs Edit",
+            "Needs Edit -> Ready",
+            "Ready -> Released",
+        ])
+        self.smart_preset_combo.setMaximumWidth(180)
+        toolbar.addWidget(self.smart_preset_combo)
+
+        apply_preset_btn = QPushButton("Smart Apply")
+        apply_preset_btn.clicked.connect(self.apply_smart_preset)
+        toolbar.addWidget(apply_preset_btn)
+
+        add_preset_btn = QPushButton("Preset +")
+        add_preset_btn.setToolTip("Add custom smart status preset")
+        add_preset_btn.clicked.connect(self.add_custom_smart_preset)
+        toolbar.addWidget(add_preset_btn)
+
+        remove_preset_btn = QPushButton("Preset -")
+        remove_preset_btn.setToolTip("Remove selected custom smart preset")
+        remove_preset_btn.clicked.connect(self.remove_selected_smart_preset)
+        toolbar.addWidget(remove_preset_btn)
+
+        self.undo_history_combo = QComboBox()
+        self.undo_history_combo.setMaximumWidth(220)
+        self.undo_history_combo.setToolTip("Select a recent batch operation to undo")
+        self.undo_history_combo.addItem("Undo History (empty)")
+        toolbar.addWidget(self.undo_history_combo)
+
+        undo_apply_btn = QPushButton("Undo")
+        undo_apply_btn.setToolTip("Restore selected undo snapshot")
+        undo_apply_btn.clicked.connect(self.undo_selected_batch)
+        toolbar.addWidget(undo_apply_btn)
 
         toolbar.addStretch()
 
@@ -247,9 +354,14 @@ class PhotosTab(QWidget):
 
         layout.addLayout(bottom_toolbar)
 
+    def _refresh_batch_settings_label(self):
+        if hasattr(self.controller, "get_batch_retouch_settings_label"):
+            self.batch_settings_label.setText(self.controller.get_batch_retouch_settings_label())
+
     # API methods
     def refresh(self):
         """Reload all photos and repopulate table."""
+        self._refresh_batch_settings_label()
         self.photo_table.setRowCount(0)
         photos = self.controller.db.get_all_photos()
 
@@ -260,8 +372,6 @@ class PhotosTab(QWidget):
             # Checkbox column
             checkbox_widget = QWidget()
             checkbox_layout = QHBoxLayout(checkbox_widget)
-            from PyQt6.QtWidgets import QCheckBox
-
             cb = QCheckBox()
             cb.setProperty("photo_id", photo["id"])
             cb.stateChanged.connect(self.controller.on_row_checkbox_toggled)
@@ -419,8 +529,13 @@ class PhotosTab(QWidget):
             QMessageBox.information(self, "No Selection", "Please select photos first")
             return
 
+        if not self._confirm_batch_action("Set Package", target_ids, [f"Package: {package_name}"]):
+            return
+
+        self._capture_undo_snapshot(target_ids, ["package_name"], label=f"Set Package: {package_name}")
+
         for photo_id in target_ids:
-            self.controller.db.add_package(photo_id, package_name)
+            self.controller.db.set_packages(photo_id, [package_name])
 
         self.refresh()
         if self.controller.statusBar():
@@ -436,10 +551,185 @@ class PhotosTab(QWidget):
             QMessageBox.information(self, "No Selection", "Please select photos first")
             return
 
+        if not self._confirm_batch_action("Set Status", target_ids, [f"Status: {status}"]):
+            return
+
+        self._capture_undo_snapshot(target_ids, ["status"], label=f"Set Status: {status}")
+
         self.controller.db.bulk_update(set(target_ids), {"status": status})
         self.refresh()
         if self.controller.statusBar():
             self.controller.statusBar().showMessage(f"Updated status for {len(target_ids)} photo(s)", 3000)
+
+    def apply_quick_status(self):
+        """Apply quick status from the top batch toolbar."""
+        status_map = {"Raw": "raw", "Needs Edit": "needs_edit", "Ready": "ready", "Released": "released"}
+        status = status_map.get(self.batch_status.currentText(), "raw")
+
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            QMessageBox.information(self, "No Selection", "Please check/select photos first")
+            return
+
+        if not self._confirm_batch_action("Set Status", target_ids, [f"Status: {status}"]):
+            return
+
+        self._capture_undo_snapshot(target_ids, ["status"], label=f"Quick Status: {status}")
+        self.controller.db.bulk_update(set(target_ids), {"status": status})
+        self.refresh()
+
+    def append_tags(self):
+        """Append tags to checked/selected photos with deduplication."""
+        raw = self.batch_tags.text().strip()
+        if not raw:
+            QMessageBox.information(self, "Tags", "Enter tags first")
+            return
+
+        new_tags = [t.strip().lower() for t in raw.split(",") if t.strip()]
+        if not new_tags:
+            QMessageBox.information(self, "Tags", "No valid tags found")
+            return
+
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            QMessageBox.information(self, "No Selection", "Please check/select photos first")
+            return
+
+        if not self._confirm_batch_action("Append Tags", target_ids, [f"Tags: {', '.join(new_tags)}"]):
+            return
+
+        self._capture_undo_snapshot(target_ids, ["tags"], label=f"Append Tags: {', '.join(new_tags)[:40]}")
+        for photo_id in target_ids:
+            photo = self.controller.db.get_photo(photo_id)
+            current = [t.strip().lower() for t in (photo.get("tags") or "").split(",") if t.strip()]
+            merged = []
+            seen = set()
+            for tag in current + new_tags:
+                if tag and tag not in seen:
+                    seen.add(tag)
+                    merged.append(tag)
+            self.controller.db.update_photo_metadata(photo_id, {"tags": ", ".join(merged)})
+        self.refresh()
+
+    def append_notes(self):
+        """Append notes text to checked/selected photos."""
+        note = self.batch_notes.text().strip()
+        if not note:
+            QMessageBox.information(self, "Notes", "Enter note text first")
+            return
+
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            QMessageBox.information(self, "No Selection", "Please check/select photos first")
+            return
+
+        if not self._confirm_batch_action("Append Notes", target_ids, [f"Text: {note}"]):
+            return
+
+        self._capture_undo_snapshot(target_ids, ["notes"], label=f"Append Notes: {note[:40]}")
+        for photo_id in target_ids:
+            photo = self.controller.db.get_photo(photo_id)
+            existing = (photo.get("notes") or "").strip()
+            updated = f"{existing}\n{note}".strip() if existing else note
+            self.controller.db.update_photo_metadata(photo_id, {"notes": updated})
+        self.refresh()
+
+    def apply_smart_preset(self):
+        """Apply conditional status transitions to selected photos."""
+        preset = self.smart_preset_combo.currentText()
+        mapping = {
+            "Raw -> Needs Edit": ("raw", "needs_edit"),
+            "Needs Edit -> Ready": ("needs_edit", "ready"),
+            "Ready -> Released": ("ready", "released"),
+        }
+        for item in self._custom_smart_presets:
+            mapping[item["name"]] = (item["src"], item["dst"])
+        src_status, dst_status = mapping.get(preset, ("raw", "needs_edit"))
+
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            QMessageBox.information(self, "No Selection", "Please check/select photos first")
+            return
+
+        eligible = []
+        for photo_id in target_ids:
+            photo = self.controller.db.get_photo(photo_id)
+            if (photo.get("status") or "raw") == src_status:
+                eligible.append(photo_id)
+
+        if not eligible:
+            QMessageBox.information(self, "Smart Apply", f"No selected photos in '{src_status}' status")
+            return
+
+        if not self._confirm_batch_action("Smart Apply", eligible, [f"{src_status} -> {dst_status}"]):
+            return
+
+        self._capture_undo_snapshot(eligible, ["status"], label=f"Smart: {src_status} → {dst_status}")
+        self.controller.db.bulk_update(set(eligible), {"status": dst_status})
+        self.refresh()
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(f"Smart Apply updated {len(eligible)} photo(s)", 3000)
+
+    def undo_selected_batch(self):
+        """Undo the snapshot selected in the undo history dropdown."""
+        if not self._batch_undo_stack:
+            QMessageBox.information(self, "Undo History", "No batch operations to undo")
+            return
+
+        idx = self.undo_history_combo.currentIndex()
+        # Stack is displayed newest-first; index 0 = top of stack
+        stack_idx = len(self._batch_undo_stack) - 1 - idx
+        if stack_idx < 0 or stack_idx >= len(self._batch_undo_stack):
+            QMessageBox.information(self, "Undo History", "Select an operation from the dropdown")
+            return
+
+        snapshot = self._batch_undo_stack.pop(stack_idx)
+        # Drop all snapshots that were captured after the restored one
+        del self._batch_undo_stack[stack_idx:]
+
+        restored = 0
+        for row in snapshot.get("rows", []):
+            photo_id = row.get("photo_id")
+            if photo_id is None:
+                continue
+            updates = dict(row.get("updates") or {})
+            if updates:
+                self.controller.db.update_photo_metadata(photo_id, updates)
+            if "packages" in row:
+                self.controller.db.set_packages(photo_id, list(row.get("packages") or []))
+            restored += 1
+
+        self._refresh_undo_dropdown()
+        self.refresh()
+        label = snapshot.get("label", "Batch")
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(f"Undone '{label}' — {restored} photo(s) restored", 4000)
+
+    def add_custom_smart_preset(self):
+        name, ok = QInputDialog.getText(self, "Add Smart Preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        src, ok = QInputDialog.getText(self, "Add Smart Preset", "Source status value (e.g., needs_edit):")
+        if not ok or not src.strip():
+            return
+        dst, ok = QInputDialog.getText(self, "Add Smart Preset", "Destination status value (e.g., ready):")
+        if not ok or not dst.strip():
+            return
+        item = {"name": name.strip(), "src": src.strip().lower(), "dst": dst.strip().lower()}
+        self._custom_smart_presets = [p for p in self._custom_smart_presets if p.get("name") != item["name"]]
+        self._custom_smart_presets.append(item)
+        self._save_custom_smart_presets()
+        self._rebuild_smart_preset_combo()
+
+    def remove_selected_smart_preset(self):
+        current = self.smart_preset_combo.currentText()
+        removed = [p for p in self._custom_smart_presets if p.get("name") == current]
+        if not removed:
+            QMessageBox.information(self, "Preset", "Select a custom preset to remove")
+            return
+        self._custom_smart_presets = [p for p in self._custom_smart_presets if p.get("name") != current]
+        self._save_custom_smart_presets()
+        self._rebuild_smart_preset_combo()
 
     def reanalyze_selected(self):
         """Trigger re-analysis of selected photos."""
@@ -499,6 +789,24 @@ class PhotosTab(QWidget):
 
     def get_target_photo_ids(self) -> list:
         """Get checked or selected photo IDs."""
+        ids = []
+        seen = set()
+
+        # Prefer checked rows if any are checked.
+        for row in range(self.photo_table.rowCount()):
+            widget = self.photo_table.cellWidget(row, self.COL_CHECKBOX)
+            if not widget:
+                continue
+            cb = widget.findChild(QCheckBox)
+            if cb and cb.isChecked():
+                pid = self.get_photo_id_from_row(row)
+                if pid is not None and pid not in seen:
+                    seen.add(pid)
+                    ids.append(pid)
+
+        if ids:
+            return ids
+
         rows = {it.row() for it in self.photo_table.selectedItems()}
         ids = []
         for r in rows:
@@ -506,3 +814,94 @@ class PhotosTab(QWidget):
             if pid is not None:
                 ids.append(pid)
         return ids
+
+    def _capture_undo_snapshot(self, photo_ids, fields, label=None):
+        """Capture previous values for multi-step batch undo."""
+        rows = []
+        for photo_id in photo_ids:
+            photo = self.controller.db.get_photo(photo_id)
+            if not photo:
+                continue
+            updates = {field: photo.get(field) for field in fields}
+            row = {"photo_id": photo_id, "updates": updates}
+            if "package_name" in fields:
+                row["packages"] = self.controller.db.get_packages(photo_id)
+            rows.append(row)
+        snapshot_label = label or (fields[0].replace("_", " ").title() if fields else "Batch")
+        self._batch_undo_stack.append({"rows": rows, "label": snapshot_label, "count": len(rows)})
+        if len(self._batch_undo_stack) > self._max_batch_undo:
+            self._batch_undo_stack.pop(0)
+        self._refresh_undo_dropdown()
+
+    def _refresh_undo_dropdown(self):
+        """Rebuild the undo history dropdown from the current stack (newest first)."""
+        if not hasattr(self, "undo_history_combo"):
+            return
+        self.undo_history_combo.blockSignals(True)
+        self.undo_history_combo.clear()
+        if not self._batch_undo_stack:
+            self.undo_history_combo.addItem("Undo History (empty)")
+        else:
+            for entry in reversed(self._batch_undo_stack):
+                lbl = entry.get("label", "Batch")
+                cnt = entry.get("count", 0)
+                self.undo_history_combo.addItem(f"{lbl}  ({cnt} photo(s))")
+        self.undo_history_combo.blockSignals(False)
+
+    def _confirm_batch_action(self, action_name, photo_ids, detail_lines=None):
+        details = detail_lines or []
+        body = [f"Apply '{action_name}' to {len(photo_ids)} photo(s)?"]
+        body.extend(details)
+        response = QMessageBox.question(
+            self,
+            "Batch Preview",
+            "\n".join(body),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        return response == QMessageBox.StandardButton.Yes
+
+    def _load_custom_smart_presets(self):
+        settings = getattr(self.controller, "settings", None)
+        if settings is None:
+            return
+        raw = settings.value("photos/custom_smart_presets", "[]")
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else []
+        except Exception:
+            data = []
+        self._custom_smart_presets = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            src = str(item.get("src", "")).strip().lower()
+            dst = str(item.get("dst", "")).strip().lower()
+            if name and src and dst:
+                self._custom_smart_presets.append({"name": name, "src": src, "dst": dst})
+        self._rebuild_smart_preset_combo()
+
+    def _save_custom_smart_presets(self):
+        settings = getattr(self.controller, "settings", None)
+        if settings is None:
+            return
+        settings.setValue("photos/custom_smart_presets", json.dumps(self._custom_smart_presets))
+        settings.sync()
+
+    def _rebuild_smart_preset_combo(self):
+        defaults = [
+            "Raw -> Needs Edit",
+            "Needs Edit -> Ready",
+            "Ready -> Released",
+        ]
+        current = self.smart_preset_combo.currentText() if hasattr(self, "smart_preset_combo") else ""
+        self.smart_preset_combo.blockSignals(True)
+        self.smart_preset_combo.clear()
+        self.smart_preset_combo.addItems(defaults)
+        for item in self._custom_smart_presets:
+            self.smart_preset_combo.addItem(item["name"])
+        if current:
+            idx = self.smart_preset_combo.findText(current)
+            if idx >= 0:
+                self.smart_preset_combo.setCurrentIndex(idx)
+        self.smart_preset_combo.blockSignals(False)

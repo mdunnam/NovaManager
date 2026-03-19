@@ -61,3 +61,6 @@ raw_photos/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local file history (VS Code Local History extension)
+.history/

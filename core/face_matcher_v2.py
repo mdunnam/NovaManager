@@ -26,7 +26,7 @@ class FaceMatcherV2:
         self.benchmark_names = []
         
         # Load OpenCV's DNN face detector
-        model_dir = Path(__file__).parent
+        model_dir = Path(__file__).parent.parent
         prototxt = model_dir / "models" / "deploy.prototxt"
         caffemodel = model_dir / "models" / "res10_300x300_ssd_iter_140000.caffemodel"
         

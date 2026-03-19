@@ -2,10 +2,17 @@
 Face matching using DeepFace library
 More accurate than OpenCV-only solution, works well on Windows
 """
-from deepface import DeepFace
 from pathlib import Path
 import numpy as np
 import logging
+
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+except Exception as e:
+    DeepFace = None
+    DEEPFACE_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"DeepFace unavailable: {e}")
 
 logger = logging.getLogger(__name__)
 
