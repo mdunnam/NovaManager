@@ -1,5 +1,5 @@
 """
-Filters tab extracted from the monolithic main window.
+Filters tab — general-purpose photo filtering for PhotoFlow.
 """
 from PyQt6.QtWidgets import (
     QWidget,
@@ -11,8 +11,9 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QLineEdit,
     QScrollArea,
-    QMessageBox,
 )
+from PyQt6.QtCore import QSize
+from core.icons import icon as _icon
 
 
 class FiltersTab(QWidget):
@@ -31,131 +32,126 @@ class FiltersTab(QWidget):
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
 
-        # Status filters
+        # --- Status filters ---
         scroll_layout.addWidget(QLabel("<b>Status:</b>"))
-        self.filter_raw = QCheckBox("Raw")
+        self.filter_raw = QCheckBox("Unreviewed (Raw)")
         scroll_layout.addWidget(self.filter_raw)
         self.filter_needs_edit = QCheckBox("Needs Edit")
         scroll_layout.addWidget(self.filter_needs_edit)
-        self.filter_ready = QCheckBox("Ready for Release")
+        self.filter_ready = QCheckBox("Ready to Publish")
         scroll_layout.addWidget(self.filter_ready)
-        self.filter_released = QCheckBox("Released")
+        self.filter_released = QCheckBox("Published")
         scroll_layout.addWidget(self.filter_released)
 
-        # Quick filters
+        # --- Quick filters ---
         scroll_layout.addWidget(QLabel("<b>Quick Filters:</b>"))
-        self.filter_unknowns = QCheckBox("Show only 'unknown' values")
-        self.filter_unknowns.setToolTip("Show photos with any field marked as 'unknown' by AI")
+        self.filter_unknowns = QCheckBox("Show only unanalyzed photos")
+        self.filter_unknowns.setToolTip("Show photos with empty AI fields")
         scroll_layout.addWidget(self.filter_unknowns)
 
-        # Platform filters
-        scroll_layout.addWidget(QLabel("<b>Released Platforms:</b>"))
-        self.filter_ig = QCheckBox("Released to Instagram")
+        # --- Platform filters ---
+        scroll_layout.addWidget(QLabel("<b>Published To:</b>"))
+        self.filter_ig = QCheckBox("Instagram")
         scroll_layout.addWidget(self.filter_ig)
-        self.filter_tiktok = QCheckBox("Released to TikTok")
+        self.filter_tiktok = QCheckBox("TikTok")
         scroll_layout.addWidget(self.filter_tiktok)
-        self.filter_fansly = QCheckBox("Released to Fansly")
-        scroll_layout.addWidget(self.filter_fansly)
 
-        # Type of shot filter
-        scroll_layout.addWidget(QLabel("<b>Type of Shot:</b>"))
-        self.filter_type = QComboBox()
-        self.filter_type.addItems(["(Any)", "selfie", "portrait", "fullbody", "closeup"])
-        self.filter_type.setEditable(True)
-        scroll_layout.addWidget(self.filter_type)
+        # --- Scene type ---
+        scroll_layout.addWidget(QLabel("<b>Scene Type:</b>"))
+        self.filter_scene = QComboBox()
+        self.filter_scene.addItems([
+            "(Any)", "portrait", "landscape", "street", "event", "food",
+            "product", "travel", "architecture", "macro", "abstract",
+            "sports", "nature", "night", "interior",
+        ])
+        self.filter_scene.setEditable(True)
+        scroll_layout.addWidget(self.filter_scene)
 
-        # Pose filter
-        scroll_layout.addWidget(QLabel("<b>Pose:</b>"))
-        self.filter_pose = QComboBox()
-        self.filter_pose.addItems(["(Any)", "standing", "sitting", "lying", "kneeling", "leaning"])
-        self.filter_pose.setEditable(True)
-        scroll_layout.addWidget(self.filter_pose)
+        # --- Mood ---
+        scroll_layout.addWidget(QLabel("<b>Mood:</b>"))
+        self.filter_mood = QComboBox()
+        self.filter_mood.addItems([
+            "(Any)", "bright", "dark", "dramatic", "cozy", "energetic",
+            "calm", "romantic", "mysterious", "playful",
+        ])
+        self.filter_mood.setEditable(True)
+        scroll_layout.addWidget(self.filter_mood)
 
-        # Facing direction filter
-        scroll_layout.addWidget(QLabel("<b>Facing:</b>"))
-        self.filter_facing = QComboBox()
-        self.filter_facing.addItems(["(Any)", "camera", "up", "down", "left", "right", "away"])
-        scroll_layout.addWidget(self.filter_facing)
+        # --- Subjects ---
+        scroll_layout.addWidget(QLabel("<b>Subjects:</b>"))
+        self.filter_subjects = QComboBox()
+        self.filter_subjects.addItems([
+            "(Any)", "people", "animal", "vehicle", "building",
+            "food", "plant", "sky", "water", "none",
+        ])
+        self.filter_subjects.setEditable(True)
+        scroll_layout.addWidget(self.filter_subjects)
 
-        # Explicit level filter
-        scroll_layout.addWidget(QLabel("<b>Explicit Level:</b>"))
-        self.filter_level = QComboBox()
-        self.filter_level.addItems(["(Any)", "sfw", "mild", "suggestive", "explicit"])
-        scroll_layout.addWidget(self.filter_level)
+        # --- Quality ---
+        scroll_layout.addWidget(QLabel("<b>Quality:</b>"))
+        self.filter_quality = QComboBox()
+        self.filter_quality.addItems(["(Any)", "excellent", "good", "fair", "poor"])
+        scroll_layout.addWidget(self.filter_quality)
 
-        # Color filter
-        scroll_layout.addWidget(QLabel("<b>Color:</b>"))
-        self.filter_color = QLineEdit()
-        self.filter_color.setPlaceholderText("Any color")
-        scroll_layout.addWidget(self.filter_color)
+        # --- Has EXIF ---
+        self.filter_has_exif = QCheckBox("Has EXIF data (camera info)")
+        scroll_layout.addWidget(self.filter_has_exif)
+        self.filter_has_gps = QCheckBox("Has GPS coordinates")
+        scroll_layout.addWidget(self.filter_has_gps)
 
-        # Material filter
-        scroll_layout.addWidget(QLabel("<b>Material:</b>"))
-        self.filter_material = QLineEdit()
-        self.filter_material.setPlaceholderText("Any material")
-        scroll_layout.addWidget(self.filter_material)
+        # --- Content rating ---
+        scroll_layout.addWidget(QLabel("<b>Content Rating:</b>"))
+        self.filter_content_rating = QComboBox()
+        self.filter_content_rating.addItems(["(Any)", "general", "mature", "restricted"])
+        scroll_layout.addWidget(self.filter_content_rating)
 
-        # Clothing type filter
-        scroll_layout.addWidget(QLabel("<b>Clothing Type:</b>"))
-        self.filter_clothing = QLineEdit()
-        self.filter_clothing.setPlaceholderText("Any clothing")
-        scroll_layout.addWidget(self.filter_clothing)
-
-        # Footwear filter
-        scroll_layout.addWidget(QLabel("<b>Footwear:</b>"))
-        self.filter_footwear = QLineEdit()
-        self.filter_footwear.setPlaceholderText("Any footwear")
-        scroll_layout.addWidget(self.filter_footwear)
-
-        # Location filter
+        # --- Location ---
         scroll_layout.addWidget(QLabel("<b>Location:</b>"))
         self.filter_location = QLineEdit()
-        self.filter_location.setPlaceholderText("Any location")
+        self.filter_location.setPlaceholderText("e.g. beach, city, studio")
         scroll_layout.addWidget(self.filter_location)
 
-        # Package filter
-        scroll_layout.addWidget(QLabel("<b>Package:</b>"))
-        self.filter_package = QLineEdit()
-        self.filter_package.setPlaceholderText("Any package")
-        scroll_layout.addWidget(self.filter_package)
+        # --- Tags ---
+        scroll_layout.addWidget(QLabel("<b>Tag:</b>"))
+        self.filter_tag = QLineEdit()
+        self.filter_tag.setPlaceholderText("e.g. sunset, portrait")
+        scroll_layout.addWidget(self.filter_tag)
 
-        # Face Match rating filter
-        scroll_layout.addWidget(QLabel("<b>Face Match Rating:</b>"))
-        self.filter_face_match = QComboBox()
-        self.filter_face_match.addItems([
-            "(Any)",
-            "5 stars",
-            "4-5 stars",
-            "3-5 stars",
-            "2-5 stars",
-            "1-5 stars",
-            "Unrated",
-        ])
-        scroll_layout.addWidget(self.filter_face_match)
+        # --- Package / Album ---
+        scroll_layout.addWidget(QLabel("<b>Package / Album:</b>"))
+        self.filter_package = QLineEdit()
+        self.filter_package.setPlaceholderText("Any package or album name")
+        scroll_layout.addWidget(self.filter_package)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
         layout.addWidget(scroll)
 
-        # Filter buttons at bottom
-        filter_buttons = QHBoxLayout()
-        apply_filters_btn = QPushButton("Apply Filters")
-        apply_filters_btn.clicked.connect(self.apply_filters)
-        filter_buttons.addWidget(apply_filters_btn)
+        # --- Buttons ---
+        btn_row = QHBoxLayout()
+        apply_btn = QPushButton("Apply Filters")
+        apply_btn.setIcon(_icon('check'))
+        apply_btn.setIconSize(QSize(16, 16))
+        apply_btn.clicked.connect(self.apply_filters)
+        btn_row.addWidget(apply_btn)
 
-        clear_filters_btn = QPushButton("Clear Filters")
-        clear_filters_btn.clicked.connect(self.clear_filters)
-        filter_buttons.addWidget(clear_filters_btn)
+        clear_btn = QPushButton("Clear Filters")
+        clear_btn.setIcon(_icon('close'))
+        clear_btn.setIconSize(QSize(16, 16))
+        clear_btn.clicked.connect(self.clear_filters)
+        btn_row.addWidget(clear_btn)
 
-        layout.addLayout(filter_buttons)
+        layout.addLayout(btn_row)
 
     def apply_filters(self):
-        """Apply filters to photos."""
-        if self.controller.statusBar():
-            self.controller.statusBar().showMessage("Filters applied (feature not yet implemented)", 3000)
+        """Delegate filter application to the main controller."""
+        if hasattr(self.controller, 'apply_filters'):
+            self.controller.apply_filters()
+        elif self.controller.statusBar():
+            self.controller.statusBar().showMessage("Filters applied", 3000)
 
     def clear_filters(self):
-        """Clear all filters."""
+        """Reset all filter widgets to default state."""
         self.filter_raw.setChecked(False)
         self.filter_needs_edit.setChecked(False)
         self.filter_ready.setChecked(False)
@@ -163,17 +159,15 @@ class FiltersTab(QWidget):
         self.filter_unknowns.setChecked(False)
         self.filter_ig.setChecked(False)
         self.filter_tiktok.setChecked(False)
-        self.filter_fansly.setChecked(False)
-        self.filter_type.setCurrentIndex(0)
-        self.filter_pose.setCurrentIndex(0)
-        self.filter_facing.setCurrentIndex(0)
-        self.filter_level.setCurrentIndex(0)
-        self.filter_color.clear()
-        self.filter_material.clear()
-        self.filter_clothing.clear()
-        self.filter_footwear.clear()
+        self.filter_scene.setCurrentIndex(0)
+        self.filter_mood.setCurrentIndex(0)
+        self.filter_subjects.setCurrentIndex(0)
+        self.filter_quality.setCurrentIndex(0)
+        self.filter_has_exif.setChecked(False)
+        self.filter_has_gps.setChecked(False)
+        self.filter_content_rating.setCurrentIndex(0)
         self.filter_location.clear()
+        self.filter_tag.clear()
         self.filter_package.clear()
-        self.filter_face_match.setCurrentIndex(0)
         if self.controller.statusBar():
             self.controller.statusBar().showMessage("Filters cleared", 2000)

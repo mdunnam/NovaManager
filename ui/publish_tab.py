@@ -1,19 +1,31 @@
 """
-Publish tab extracted from the monolithic main window.
+Publish tab for PhotoFlow — post queue, bulk scheduling, and quick-post.
 """
+from datetime import datetime, timedelta
+
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QFrame, QListWidget, QListWidgetItem, QScrollArea,
+    QSplitter, QComboBox, QSpinBox, QTimeEdit, QGroupBox,
+    QFormLayout, QMessageBox, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTime, QSize
+from core.icons import icon as _icon
+
+_PLATFORMS = ['instagram', 'twitter', 'facebook', 'pinterest', 'threads', 'tiktok']
+
+_PLATFORM_ICONS = {
+    'instagram': 'instagram',
+    'tiktok': 'tiktok',
+    'twitter': 'twitter_x',
+    'facebook': 'facebook',
+    'pinterest': 'pinterest',
+    'threads': 'threads',
+}
 
 
 class PublishTab(QWidget):
-    """Encapsulates publishing and release workflows."""
+    """Post queue management and bulk scheduling."""
 
     def __init__(self, controller):
         super().__init__()
@@ -23,122 +35,207 @@ class PublishTab(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
-        # Info section
-        info = QLabel(
-            "<b>Publish & Release</b> — Stage photos for platforms, automate uploads, and track release status."
+        header = QLabel('<b>Publish Queue</b>')
+        header.setStyleSheet('font-size: 15px; padding: 4px;')
+        layout.addWidget(header)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # ── Left: ready queue ────────────────────────────────────
+        left = QWidget()
+        left.setMinimumWidth(0)
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 4, 0)
+
+        ll.addWidget(QLabel('<b>Ready to Post</b>'))
+        self.queue_list = QListWidget()
+        self.queue_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.queue_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.queue_list.setToolTip('Drag to reorder. These are photos with status "ready".')
+        ll.addWidget(self.queue_list)
+
+        q_btn_row = QHBoxLayout()
+        refresh_q_btn = QPushButton()
+        refresh_q_btn.setIcon(_icon('refresh'))
+        refresh_q_btn.setIconSize(QSize(18, 18))
+        refresh_q_btn.setToolTip('Refresh post queue')
+        refresh_q_btn.clicked.connect(self.refresh_queue)
+        post_next_btn = QPushButton('Post Next \u2192')
+        post_next_btn.setIcon(_icon('arrow_right', 16, '#ffffff'))
+        post_next_btn.setIconSize(QSize(16, 16))
+        post_next_btn.setStyleSheet('background: #1a73e8; color: white; font-weight: bold;')
+        post_next_btn.clicked.connect(self._post_next)
+        q_btn_row.addWidget(refresh_q_btn)
+        q_btn_row.addWidget(post_next_btn)
+        ll.addLayout(q_btn_row)
+
+        splitter.addWidget(left)
+
+        # ── Right: bulk schedule + stage controls ────────────────
+        right = QWidget()
+        right.setMinimumWidth(0)
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(4, 0, 0, 0)
+
+        # Stage buttons (quick flags)
+        stage_group = QGroupBox('Stage Selected Photos')
+        stage_layout = QHBoxLayout(stage_group)
+        stage_layout.addWidget(QLabel('Mark as staged for:'))
+        for platform in ['Instagram', 'TikTok', 'Twitter', 'Facebook']:
+            btn = QPushButton(platform)
+            pkey = platform.lower()
+            if pkey in _PLATFORM_ICONS:
+                btn.setIcon(_icon(_PLATFORM_ICONS[pkey]))
+                btn.setIconSize(QSize(16, 16))
+            btn.setCheckable(False)
+            btn.clicked.connect(
+                lambda checked, p=platform.lower(): self.controller.toggle_staged(p)
+                if hasattr(self.controller, 'toggle_staged') else None
+            )
+            stage_layout.addWidget(btn)
+        stage_layout.addStretch()
+        rl.addWidget(stage_group)
+
+        # Bulk schedule
+        bulk_group = QGroupBox('Bulk Schedule')
+        bulk_form = QFormLayout(bulk_group)
+
+        self.bulk_platform = QComboBox()
+        self.bulk_platform.addItems([p.capitalize() for p in _PLATFORMS])
+        bulk_form.addRow('Platform:', self.bulk_platform)
+
+        self.bulk_count = QSpinBox()
+        self.bulk_count.setRange(1, 100)
+        self.bulk_count.setValue(7)
+        bulk_form.addRow('Number of posts:', self.bulk_count)
+
+        self.bulk_days = QSpinBox()
+        self.bulk_days.setRange(1, 365)
+        self.bulk_days.setValue(7)
+        self.bulk_days.setSuffix(' days')
+        bulk_form.addRow('Spread over:', self.bulk_days)
+
+        self.bulk_start_time = QTimeEdit()
+        self.bulk_start_time.setTime(QTime(9, 0))
+        self.bulk_start_time.setDisplayFormat('HH:mm')
+        bulk_form.addRow('Post time (UTC):', self.bulk_start_time)
+
+        schedule_bulk_btn = QPushButton('Schedule Queue to Platform')
+        schedule_bulk_btn.setIcon(_icon('calendar', 16, '#ffffff'))
+        schedule_bulk_btn.setIconSize(QSize(16, 16))
+        schedule_bulk_btn.setStyleSheet('background: #1a73e8; color: white; padding: 5px 12px;')
+        schedule_bulk_btn.clicked.connect(self._bulk_schedule)
+        bulk_form.addRow('', schedule_bulk_btn)
+        rl.addWidget(bulk_group)
+
+        # Manage
+        manage_group = QGroupBox('Manage')
+        manage_layout = QHBoxLayout(manage_group)
+        pkg_btn = QPushButton('Manage Packages')
+        pkg_btn.setIcon(_icon('package'))
+        pkg_btn.setIconSize(QSize(16, 16))
+        pkg_btn.clicked.connect(
+            lambda: self.controller.manage_packages_dialog()
+            if hasattr(self.controller, 'manage_packages_dialog') else None
         )
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        unstage_btn = QPushButton('Unstage Selected')
+        unstage_btn.setIcon(_icon('unstage'))
+        unstage_btn.setIconSize(QSize(16, 16))
+        unstage_btn.clicked.connect(
+            lambda: self.controller.unstage_selected()
+            if hasattr(self.controller, 'unstage_selected') else None
+        )
+        manage_layout.addWidget(pkg_btn)
+        manage_layout.addWidget(unstage_btn)
+        manage_layout.addStretch()
+        rl.addWidget(manage_group)
 
-        # Staging section
-        staging_group = QFrame()
-        staging_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        staging_layout = QVBoxLayout(staging_group)
+        rl.addStretch()
+        splitter.addWidget(right)
+        splitter.setSizes([350, 450])
+        splitter.setCollapsible(0, True)
+        splitter.setCollapsible(1, True)
+        layout.addWidget(splitter)
 
-        staging_label = QLabel("<b>Stage for Platforms</b>")
-        staging_layout.addWidget(staging_label)
+        self.refresh_queue()
 
-        staging_controls = QHBoxLayout()
-        staging_controls.addWidget(QLabel("Stage selected photos to:"))
+    def refresh_queue(self):
+        self.queue_list.clear()
+        try:
+            photos = self.controller.db.get_all_photos()
+            ready = [p for p in photos if p.get('status') == 'ready']
+            for photo in ready:
+                item = QListWidgetItem(
+                    f"ID:{photo['id']:06d}  {photo.get('filename', '')}"
+                    f"  [{photo.get('scene_type') or '—'}]"
+                )
+                item.setData(Qt.ItemDataRole.UserRole, photo['id'])
+                self.queue_list.addItem(item)
+        except Exception as e:
+            print(f'[PublishTab] queue refresh error: {e}')
 
-        stage_ig = QPushButton()
-        stage_ig.setIcon(self.controller.get_icon("instagram.png", "IG"))
-        stage_ig.setIconSize(self.controller.icon_size)
-        stage_ig.setToolTip("Stage to Instagram")
-        stage_ig.clicked.connect(lambda: self.controller.toggle_staged("instagram"))
-        staging_controls.addWidget(stage_ig)
+    def _post_next(self):
+        item = self.queue_list.item(0)
+        if not item:
+            QMessageBox.information(self, 'Queue Empty', 'No ready photos in queue.')
+            return
+        photo_id = item.data(Qt.ItemDataRole.UserRole)
+        photo = self.controller.db.get_photo(photo_id)
+        if not photo:
+            return
+        try:
+            composer = getattr(self.controller, 'composer_tab', None)
+            if composer:
+                composer.set_photo_for_post(photo)
+                tabs = self.controller.tabs
+                for i in range(tabs.count()):
+                    if tabs.widget(i) is composer:
+                        tabs.setCurrentIndex(i)
+                        break
+        except Exception as e:
+            QMessageBox.warning(self, 'Error', str(e))
 
-        stage_tt = QPushButton()
-        stage_tt.setIcon(self.controller.get_icon("tiktok.png", "TT"))
-        stage_tt.setIconSize(self.controller.icon_size)
-        stage_tt.setToolTip("Stage to TikTok")
-        stage_tt.clicked.connect(lambda: self.controller.toggle_staged("tiktok"))
-        staging_controls.addWidget(stage_tt)
+    def _bulk_schedule(self):
+        platform = self.bulk_platform.currentText().lower()
+        count = self.bulk_count.value()
+        days = self.bulk_days.value()
+        post_time = self.bulk_start_time.time()
 
-        stage_f = QPushButton()
-        stage_f.setIcon(self.controller.get_icon("fansly.png", "F"))
-        stage_f.setIconSize(self.controller.icon_size)
-        stage_f.setToolTip("Stage to Fansly")
-        stage_f.clicked.connect(lambda: self.controller.toggle_staged("fansly"))
-        staging_controls.addWidget(stage_f)
+        # Get ready photos not yet scheduled for this platform
+        try:
+            photos = self.controller.db.get_all_photos()
+            ready = [p for p in photos if p.get('status') == 'ready'][:count]
+        except Exception as e:
+            QMessageBox.warning(self, 'Error', str(e))
+            return
 
-        staging_controls.addStretch()
-        staging_layout.addLayout(staging_controls)
-        layout.addWidget(staging_group)
+        if not ready:
+            QMessageBox.information(self, 'Bulk Schedule', 'No "ready" photos to schedule.')
+            return
 
-        # Release section
-        release_group = QFrame()
-        release_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        release_layout = QVBoxLayout(release_group)
+        interval_hours = (days * 24) / max(len(ready), 1)
+        now = datetime.utcnow().replace(hour=post_time.hour(), minute=post_time.minute(), second=0)
+        scheduled = []
+        for i, photo in enumerate(ready):
+            post_dt = now + timedelta(hours=interval_hours * i)
+            try:
+                self.controller.db.schedule_post(
+                    photo_id=photo['id'],
+                    platform=platform,
+                    caption=photo.get('ai_caption') or '',
+                    hashtags=photo.get('suggested_hashtags') or '',
+                    scheduled_time=post_dt.isoformat(),
+                )
+                scheduled.append(photo['id'])
+            except Exception as e:
+                print(f'[BulkSchedule] error: {e}')
 
-        release_label = QLabel("<b>Release to Platforms</b>")
-        release_layout.addWidget(release_label)
-
-        release_controls = QHBoxLayout()
-        release_controls.addWidget(QLabel("Release selected photos to:"))
-
-        rel_ig = QPushButton()
-        rel_ig.setIcon(self.controller.get_icon("instagram.png", "IG"))
-        rel_ig.setIconSize(self.controller.icon_size)
-        rel_ig.setToolTip("Release: Instagram")
-        rel_ig.clicked.connect(lambda: self.controller.toggle_release_status("released_instagram"))
-        release_controls.addWidget(rel_ig)
-
-        rel_tt = QPushButton()
-        rel_tt.setIcon(self.controller.get_icon("tiktok.png", "TT"))
-        rel_tt.setIconSize(self.controller.icon_size)
-        rel_tt.setToolTip("Release: TikTok")
-        rel_tt.clicked.connect(lambda: self.controller.toggle_release_status("released_tiktok"))
-        release_controls.addWidget(rel_tt)
-
-        rel_f = QPushButton()
-        rel_f.setIcon(self.controller.get_icon("fansly.png", "F"))
-        rel_f.setIconSize(self.controller.icon_size)
-        rel_f.setToolTip("Release: Fansly")
-        rel_f.clicked.connect(lambda: self.controller.toggle_release_status("released_fansly"))
-        release_controls.addWidget(rel_f)
-
-        release_controls.addStretch()
-        release_layout.addLayout(release_controls)
-        layout.addWidget(release_group)
-
-        # Manage section
-        manage_group = QFrame()
-        manage_group.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        manage_layout = QVBoxLayout(manage_group)
-
-        manage_label = QLabel("<b>Manage</b>")
-        manage_layout.addWidget(manage_label)
-
-        manage_controls = QHBoxLayout()
-
-        unstage_btn = QPushButton()
-        unstage_btn.setIcon(self.controller.get_icon("unstage.png", "US"))
-        unstage_btn.setIconSize(self.controller.icon_size)
-        unstage_btn.setToolTip("Unstage: move back to root/<package>")
-        unstage_btn.clicked.connect(self.controller.unstage_selected)
-        manage_controls.addWidget(unstage_btn)
-
-        pkg_btn = QPushButton()
-        pkg_btn.setIcon(self.controller.get_icon("package.png", "PK"))
-        pkg_btn.setIconSize(self.controller.icon_size)
-        pkg_btn.setToolTip("Manage packages")
-        pkg_btn.clicked.connect(self.controller.manage_packages_dialog)
-        manage_controls.addWidget(pkg_btn)
-
-        unpkg_btn = QPushButton()
-        unpkg_btn.setIcon(self.controller.get_icon("unpackage.png", "UP"))
-        unpkg_btn.setIconSize(self.controller.icon_size)
-        unpkg_btn.setToolTip("Unpackage: clear package and move to root")
-        unpkg_btn.clicked.connect(self.controller.unpackage_selected)
-        manage_controls.addWidget(unpkg_btn)
-
-        manage_controls.addStretch()
-        manage_layout.addLayout(manage_controls)
-        layout.addWidget(manage_group)
-
-        layout.addStretch()
-
-        coming_soon = QLabel("<i>Coming soon: Automated uploads, scheduling, caption templates, upload history</i>")
-        coming_soon.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(coming_soon)
+        msg = f'Scheduled {len(scheduled)} posts to {platform.capitalize()} over {days} days.'
+        QMessageBox.information(self, 'Bulk Schedule', msg)
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(msg, 5000)
+        # Refresh schedule tab
+        try:
+            self.controller.schedule_tab.refresh()
+        except Exception:
+            pass

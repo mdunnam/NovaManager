@@ -1,7 +1,7 @@
 
 """
-Nova Photo Manager - Main Application
-A desktop application for managing and organizing Nova's photo collection
+PhotoFlow - Main Application
+A desktop application for organizing photos and publishing to social media
 """
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -42,14 +42,18 @@ except Exception:
     requests = None
 
 from ui.gallery_tab import GalleryTab
-from ui.face_matching_tab import FaceMatchingTab
 from ui.photos_tab import PhotosTab
 from ui.publish_tab import PublishTab
 from ui.filters_tab import FiltersTab
-from ui.vocabularies_tab import VocabulariesTab
-from ui.learning_tab import AILearningTab
 from ui.instagram_tab import InstagramTab
 from ui.tiktok_tab import TikTokTab
+from ui.albums_tab import AlbumsTab
+from ui.composer_tab import ComposerTab
+from ui.schedule_tab import ScheduleTab
+from ui.settings_tab import SettingsTab
+from ui.duplicates_tab import DuplicatesTab
+from ui.batch_tab import BatchTab
+from ui.history_tab import HistoryTab
 
 from core.database import PhotoDatabase
 from core.ai_analyzer import analyze_image
@@ -3631,12 +3635,47 @@ class AnalyzerThread(QThread):
                 try:
                     # Check if already analyzed
                     existing = db.get_photo_by_path(filepath)
-                    if existing and existing.get('type_of_shot'):
+                    if existing and existing.get('scene_type'):
                         continue  # Skip already analyzed
-                    
+
+                    # EXIF extraction
+                    try:
+                        from core.exif_extractor import extract_exif
+                        exif_meta = extract_exif(filepath)
+                    except Exception:
+                        exif_meta = {}
+
+                    # Quality scoring
+                    try:
+                        from core.quality_scorer import score_image
+                        quality_meta = score_image(filepath)
+                    except Exception:
+                        quality_meta = {}
+
+                    # Perceptual hash (for duplicate detection)
+                    try:
+                        from core.duplicate_detector import perceptual_hash, md5_hash
+                        p_hash = perceptual_hash(filepath)
+                        f_hash = md5_hash(filepath)
+                    except Exception:
+                        p_hash = ''
+                        f_hash = ''
+
                     # Analyze image with AI
                     metadata = analyze_image(filepath, db)
-                    
+
+                    # Merge EXIF, quality, and hash data (non-destructive: AI fields take priority)
+                    for k, v in exif_meta.items():
+                        if k not in metadata:
+                            metadata[k] = v
+                    for k in ('blur_score', 'exposure_score', 'quality', 'quality_issues'):
+                        if k in quality_meta:
+                            metadata[k] = quality_meta[k]
+                    if p_hash:
+                        metadata['perceptual_hash'] = p_hash
+                    if f_hash:
+                        metadata['file_hash'] = f_hash
+
                     # Add or update in database
                     if existing:
                         # Protect user corrections
@@ -3645,17 +3684,17 @@ class AnalyzerThread(QThread):
                             for field in corrected_fields:
                                 if field in metadata:
                                     del metadata[field]
-                        
+
                         if metadata:
                             db.update_photo_metadata(existing['id'], metadata)
                         photo_id = existing['id']
                     else:
                         photo_id = db.add_photo(filepath, metadata)
-                    
+
                     # Get complete photo data and emit
                     photo_data = db.get_photo(photo_id)
                     self.photo_analyzed.emit(photo_data)
-                
+
                 except Exception as e:
                     self.error.emit(f"Error analyzing {filename}: {str(e)}")
             
@@ -3803,7 +3842,7 @@ class ReanalyzerThread(QThread):
                 try:
                     # Check if already analyzed
                     existing = db.get_photo_by_path(filepath)
-                    if existing and existing.get('type_of_shot'):
+                    if existing and existing.get('scene_type'):
                         continue  # Skip already analyzed
                     
                     # Analyze image with AI (pass db for learning from corrections)
@@ -3847,8 +3886,9 @@ class ReanalyzerThread(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Nova Photo Manager")
+        self.setWindowTitle("PhotoFlow")
         self.resize(1200, 800)
+        self.setMinimumSize(400, 300)
         from PyQt6.QtCore import QSize, QSettings
         self.icon_size = QSize(24, 24)
         self.settings = QSettings()
@@ -3865,24 +3905,19 @@ class MainWindow(QMainWindow):
     COL_CHECKBOX = 0
     COL_ID = 1
     COL_THUMBNAIL = 2
-    COL_TYPE = 3
-    COL_POSE = 4
-    COL_FACING = 5
-    COL_LEVEL = 6
-    COL_COLOR = 7
-    COL_MATERIAL = 8
-    COL_CLOTHING = 9
-    COL_FOOTWEAR = 10
-    COL_LOCATION = 11
-    COL_STATUS = 12
-    COL_IG = 13
-    COL_TIKTOK = 14
-    COL_FANSLY = 15
-    COL_PACKAGE = 16
-    COL_TAGS = 17
-    COL_DATE = 18
-    COL_FILEPATH = 19
-    COL_NOTES = 20
+    COL_SCENE = 3
+    COL_MOOD = 4
+    COL_SUBJECTS = 5
+    COL_LOCATION = 6
+    COL_OBJECTS = 7
+    COL_STATUS = 8
+    COL_IG = 9
+    COL_TIKTOK = 10
+    COL_PACKAGE = 11
+    COL_TAGS = 12
+    COL_DATE = 13
+    COL_FILEPATH = 14
+    COL_NOTES = 15
 
     def init_ui(self):
         # Main widget and layout
@@ -3895,6 +3930,8 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(top_section)
         # Tab widget for different views
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(True)   # allow tab bar to scroll when window is narrow
+        self.tabs.tabBar().setExpanding(False)  # don't stretch tabs to fill bar width
         print('Tab widget created', file=sys.stderr)
         try:
             self.gallery_tab = GalleryTab(self)
@@ -3919,24 +3956,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating Filters tab: {e}', file=sys.stderr)
         try:
-            self.vocabularies_tab = VocabulariesTab(self)
-            self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
-            print('Vocabularies tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
-        try:
-            self.learning_tab = AILearningTab(self)
-            self.tabs.addTab(self.learning_tab, "AI Learning")
-            print('AI Learning tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
-        try:
-            self.face_matching_tab = FaceMatchingTab(self)
-            self.tabs.addTab(self.face_matching_tab, "Face Matching")
-            print('Face Matching tab added', file=sys.stderr)
-        except Exception as e:
-            print(f'Error creating Face Matching tab: {e}', file=sys.stderr)
-        try:
             self.publish_tab = PublishTab(self)
             self.tabs.addTab(self.publish_tab, "Publish")
             print('Publish tab added', file=sys.stderr)
@@ -3954,6 +3973,56 @@ class MainWindow(QMainWindow):
             print('TikTok tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating TikTok tab: {e}', file=sys.stderr)
+
+        try:
+            self.albums_tab = AlbumsTab(self)
+            self.tabs.addTab(self.albums_tab, "Albums")
+            print('Albums tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Albums tab: {e}', file=sys.stderr)
+
+        try:
+            self.composer_tab = ComposerTab(self)
+            self.tabs.addTab(self.composer_tab, "Compose")
+            print('Composer tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Composer tab: {e}', file=sys.stderr)
+
+        try:
+            self.schedule_tab = ScheduleTab(self)
+            self.tabs.addTab(self.schedule_tab, "Schedule")
+            print('Schedule tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Schedule tab: {e}', file=sys.stderr)
+
+        try:
+            self.duplicates_tab = DuplicatesTab(self)
+            self.tabs.addTab(self.duplicates_tab, "Duplicates")
+            print('Duplicates tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Duplicates tab: {e}', file=sys.stderr)
+
+        try:
+            self.batch_tab = BatchTab(self)
+            self.tabs.addTab(self.batch_tab, "Batch")
+            print('Batch tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Batch tab: {e}', file=sys.stderr)
+
+        try:
+            self.history_tab = HistoryTab(self)
+            self.tabs.addTab(self.history_tab, "History")
+            print('History tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating History tab: {e}', file=sys.stderr)
+
+        try:
+            self.settings_tab = SettingsTab(self)
+            self.tabs.addTab(self.settings_tab, "Settings")
+            print('Settings tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Settings tab: {e}', file=sys.stderr)
+
         main_layout.addWidget(self.tabs)
         
         # Tag cloud at bottom
@@ -3961,6 +4030,27 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(tag_cloud_widget)
         
         self.tabs.setCurrentIndex(0)
+
+        # Start post scheduler background worker
+        try:
+            from core.social.scheduler import SchedulerWorker
+            def _get_creds(platform):
+                return self.db.get_credentials(platform) or {}
+            self._scheduler_worker = SchedulerWorker(self.db.db_path, _get_creds)
+            self._scheduler_worker.post_sent.connect(
+                lambda post: self.statusBar().showMessage(
+                    f"Scheduled post sent to {post.get('platform', '?')}!", 5000
+                ) if self.statusBar() else None
+            )
+            self._scheduler_worker.post_failed.connect(
+                lambda post, err: self.statusBar().showMessage(
+                    f"Scheduled post failed ({post.get('platform', '?')}): {err}", 8000
+                ) if self.statusBar() else None
+            )
+            self._scheduler_worker.start()
+            print('Scheduler worker started', file=sys.stderr)
+        except Exception as e:
+            print(f'Scheduler worker error: {e}', file=sys.stderr)
 
         # Ensure gallery is populated on startup without requiring manual refresh.
         try:
@@ -4635,23 +4725,23 @@ class MainWindow(QMainWindow):
         # Help Menu
         help_menu = self.menuBar().addMenu("&Help")
         
-        about_action = help_menu.addAction("&About Nova Photo Manager")
+        about_action = help_menu.addAction("&About PhotoFlow")
         about_action.triggered.connect(self.show_about_dialog)
-    
+
     def show_about_dialog(self):
         """Show an About dialog"""
         QMessageBox.information(
             self,
-            "About Nova Photo Manager",
-            "Nova Photo Manager v1.0\n\n"
-            "A desktop application for managing and organizing photo collections.\n\n"
+            "About PhotoFlow",
+            "PhotoFlow v2.0\n\n"
+            "A desktop application for organizing photos and publishing to social media.\n\n"
             "Features:\n"
-            "• AI-powered photo analysis\n"
-            "• Gallery and library views\n"
-            "• Persistent notes with Lightbox viewer\n"
-            "• Multi-platform release management\n"
-            "• Advanced filtering and sorting\n\n"
-            "© 2025 Nova Photo Manager"
+            "• AI-powered photo tagging and caption generation\n"
+            "• Gallery and library views with albums\n"
+            "• Multi-platform social media publishing\n"
+            "• Post scheduling and queue management\n"
+            "• Advanced filtering and batch operations\n\n"
+            "© 2026 PhotoFlow"
         )
     
     def show_settings_dialog(self):
@@ -4724,7 +4814,7 @@ class MainWindow(QMainWindow):
         info_group = QGroupBox("Database Information")
         info_layout = QVBoxLayout()
         
-        db_path_label = QLabel(f"Database: data/nova_photos.db")
+        db_path_label = QLabel(f"Database: {self.db.db_path}")
         db_path_label.setStyleSheet("color: gray; font-size: 9px;")
         info_layout.addWidget(db_path_label)
         
@@ -4882,9 +4972,9 @@ class MainWindow(QMainWindow):
         
         # Set columns (checkbox column 0 left intentionally blank for a master checkbox later)
         columns = [
-            "", "ID", "Thumbnail", "Type", "Pose", "Facing", "Level", "Color", 
-            "Material", "Clothing", "Footwear", "Location", "Status",
-            "IG", "TikTok", "Fansly", "Package", "Tags", "Date Created", "Filepath", "Notes"
+            "", "ID", "Thumbnail", "Scene", "Mood", "Subjects",
+            "Location", "Objects", "Status",
+            "IG", "TikTok", "Package", "Tags", "Date Created", "Filepath", "Notes"
         ]
         self.photo_table.setColumnCount(len(columns))
         self.photo_table.setHorizontalHeaderLabels(columns)
@@ -4953,13 +5043,6 @@ class MainWindow(QMainWindow):
         staged_tiktok.clicked.connect(lambda: self.toggle_staged("tiktok"))
         bottom_toolbar.addWidget(staged_tiktok)
 
-        staged_fansly = QPushButton()
-        staged_fansly.setIcon(self.get_icon("fansly.png", "F"))
-        staged_fansly.setIconSize(self.icon_size)
-        staged_fansly.setToolTip("Stage to Fansly")
-        staged_fansly.clicked.connect(lambda: self.toggle_staged("fansly"))
-        bottom_toolbar.addWidget(staged_fansly)
-
         # Unstage button (move back to root/<package>)
         unstage_btn = QPushButton()
         unstage_btn.setIcon(self.get_icon("unstage.png", "US"))
@@ -5000,11 +5083,6 @@ class MainWindow(QMainWindow):
         toggle_tiktok.clicked.connect(lambda: self.toggle_release_status("released_tiktok"))
         bottom_toolbar.addWidget(toggle_tiktok)
         
-        toggle_fansly = QPushButton()
-        toggle_fansly.setIcon(self.get_icon("fansly.png", "F"))
-        toggle_fansly.setIconSize(self.icon_size)
-        toggle_fansly.setToolTip("Release: Fansly")
-        toggle_fansly.clicked.connect(lambda: self.toggle_release_status("released_fansly"))
     def create_publish_tab(self):
         """Return the shared publish tab widget."""
         return self.publish_tab
@@ -5265,7 +5343,7 @@ class MainWindow(QMainWindow):
         if picker.exec() == QDialog.DialogCode.Accepted and picker.selected_photo:
             photo = picker.selected_photo
             self.ig_selected_photo_id = photo['id']
-            self.ig_photo_label.setText(f"📸 {photo['id']:06d} - {photo.get('type_of_shot', 'Photo')}")
+            self.ig_photo_label.setText(f"📸 {photo['id']:06d} - {photo.get('scene_type') or photo.get('filename', 'Photo')}")
             
             # Update thumbnail preview
             if photo.get('filepath') and os.path.exists(photo['filepath']):
@@ -5433,7 +5511,7 @@ class MainWindow(QMainWindow):
         if picker.exec() == QDialog.DialogCode.Accepted and picker.selected_photo:
             photo = picker.selected_photo
             self.tt_selected_media_id = photo['id']
-            self.tt_media_label.setText(f"🎬 {photo['id']:06d} - {photo.get('type_of_shot', 'Media')}")
+            self.tt_media_label.setText(f"🎬 {photo['id']:06d} - {photo.get('scene_type') or photo.get('filename', 'Media')}")
             self.statusBar().showMessage(f"Media selected: {photo['id']:06d}", 2000)
     
     def post_to_tiktok(self):
@@ -5569,84 +5647,42 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.filter_ig)
         self.filter_tiktok = QCheckBox("Released to TikTok")
         layout.addWidget(self.filter_tiktok)
-        self.filter_fansly = QCheckBox("Released to Fansly")
-        layout.addWidget(self.filter_fansly)
-        
-        # Type of shot filter
-        layout.addWidget(QLabel("<b>Type of Shot:</b>"))
-        self.filter_type = QComboBox()
-        self.filter_type.addItems(["(Any)", "selfie", "portrait", "fullbody", "closeup"])
-        self.filter_type.setEditable(True)
-        layout.addWidget(self.filter_type)
-        
-        # Pose filter
-        layout.addWidget(QLabel("<b>Pose:</b>"))
-        self.filter_pose = QComboBox()
-        self.filter_pose.addItems(["(Any)", "standing", "sitting", "lying", "kneeling", "leaning"])
-        self.filter_pose.setEditable(True)
-        layout.addWidget(self.filter_pose)
-        
-        # Facing direction filter
-        layout.addWidget(QLabel("<b>Facing:</b>"))
-        self.filter_facing = QComboBox()
-        self.filter_facing.addItems(["(Any)", "camera", "up", "down", "left", "right", "away"])
-        layout.addWidget(self.filter_facing)
-        
-        # Explicit level filter
-        layout.addWidget(QLabel("<b>Explicit Level:</b>"))
-        self.filter_level = QComboBox()
-        self.filter_level.addItems(["(Any)", "sfw", "mild", "suggestive", "explicit"])
-        layout.addWidget(self.filter_level)
-        
-        # Color filter
-        layout.addWidget(QLabel("<b>Color:</b>"))
-        self.filter_color = QLineEdit()
-        self.filter_color.setPlaceholderText("Any color")
-        layout.addWidget(self.filter_color)
-        
-        # Material filter
-        layout.addWidget(QLabel("<b>Material:</b>"))
-        self.filter_material = QLineEdit()
-        self.filter_material.setPlaceholderText("Any material")
-        layout.addWidget(self.filter_material)
-        
-        # Clothing type filter
-        layout.addWidget(QLabel("<b>Clothing Type:</b>"))
-        self.filter_clothing = QLineEdit()
-        self.filter_clothing.setPlaceholderText("Any clothing")
-        layout.addWidget(self.filter_clothing)
-        
-        # Footwear filter
-        layout.addWidget(QLabel("<b>Footwear:</b>"))
-        self.filter_footwear = QLineEdit()
-        self.filter_footwear.setPlaceholderText("Any footwear")
-        layout.addWidget(self.filter_footwear)
-        
+        # Scene type filter
+        layout.addWidget(QLabel("<b>Scene Type:</b>"))
+        self.filter_scene = QComboBox()
+        self.filter_scene.addItems(["(Any)", "portrait", "landscape", "street", "event", "food",
+                                     "product", "travel", "architecture", "macro", "abstract",
+                                     "sports", "nature", "night", "interior"])
+        self.filter_scene.setEditable(True)
+        layout.addWidget(self.filter_scene)
+
+        # Mood filter
+        layout.addWidget(QLabel("<b>Mood:</b>"))
+        self.filter_mood = QComboBox()
+        self.filter_mood.addItems(["(Any)", "bright", "dark", "dramatic", "cozy", "energetic",
+                                    "calm", "romantic", "mysterious", "playful"])
+        self.filter_mood.setEditable(True)
+        layout.addWidget(self.filter_mood)
+
+        # Subjects filter
+        layout.addWidget(QLabel("<b>Subjects:</b>"))
+        self.filter_subjects = QComboBox()
+        self.filter_subjects.addItems(["(Any)", "people", "animal", "vehicle", "building",
+                                        "food", "plant", "sky", "water", "none"])
+        self.filter_subjects.setEditable(True)
+        layout.addWidget(self.filter_subjects)
+
         # Location filter
         layout.addWidget(QLabel("<b>Location:</b>"))
         self.filter_location = QLineEdit()
         self.filter_location.setPlaceholderText("Any location")
         layout.addWidget(self.filter_location)
-        
-        # Package filter
-        layout.addWidget(QLabel("<b>Package:</b>"))
-        self.filter_package = QLineEdit()
-        self.filter_package.setPlaceholderText("Any package")
-        layout.addWidget(self.filter_package)
 
-        # Face Match rating filter
-        layout.addWidget(QLabel("<b>Face Match Rating:</b>"))
-        self.filter_face_match = QComboBox()
-        self.filter_face_match.addItems([
-            "(Any)",
-            "5 stars",
-            "4-5 stars",
-            "3-5 stars",
-            "2-5 stars",
-            "1-5 stars",
-            "Unrated"
-        ])
-        layout.addWidget(self.filter_face_match)
+        # Package filter
+        layout.addWidget(QLabel("<b>Package/Album:</b>"))
+        self.filter_package = QLineEdit()
+        self.filter_package.setPlaceholderText("Any package or album")
+        layout.addWidget(self.filter_package)
         
         layout.addStretch()
         scroll.setWidget(scroll_widget)
@@ -5978,19 +6014,14 @@ class MainWindow(QMainWindow):
                 self.COL_CHECKBOX: 'COL_CHECKBOX',
                 self.COL_ID: 'COL_ID',
                 self.COL_THUMBNAIL: 'COL_THUMBNAIL',
-                self.COL_TYPE: 'COL_TYPE',
-                self.COL_POSE: 'COL_POSE',
-                self.COL_FACING: 'COL_FACING',
-                self.COL_LEVEL: 'COL_LEVEL',
-                self.COL_COLOR: 'COL_COLOR',
-                self.COL_MATERIAL: 'COL_MATERIAL',
-                self.COL_CLOTHING: 'COL_CLOTHING',
-                self.COL_FOOTWEAR: 'COL_FOOTWEAR',
+                self.COL_SCENE: 'COL_SCENE',
+                self.COL_MOOD: 'COL_MOOD',
+                self.COL_SUBJECTS: 'COL_SUBJECTS',
                 self.COL_LOCATION: 'COL_LOCATION',
+                self.COL_OBJECTS: 'COL_OBJECTS',
                 self.COL_STATUS: 'COL_STATUS',
                 self.COL_IG: 'COL_IG',
                 self.COL_TIKTOK: 'COL_TIKTOK',
-                self.COL_FANSLY: 'COL_FANSLY',
                 self.COL_PACKAGE: 'COL_PACKAGE',
                 self.COL_TAGS: 'COL_TAGS',
                 self.COL_DATE: 'COL_DATE',
@@ -6965,15 +6996,10 @@ class MainWindow(QMainWindow):
         try:
             # Column mapping: column_index -> field_name
             vocab_columns = {
-                self.COL_TYPE: 'type_of_shot',
-                self.COL_POSE: 'pose',
-                self.COL_FACING: 'facing_direction',
-                self.COL_LEVEL: 'explicit_level',
-                self.COL_COLOR: 'color_of_clothing',
-                self.COL_MATERIAL: 'material',
-                self.COL_CLOTHING: 'type_clothing',
-                self.COL_FOOTWEAR: 'footwear',
-                self.COL_LOCATION: 'location'
+                self.COL_SCENE: 'scene_type',
+                self.COL_MOOD: 'mood',
+                self.COL_SUBJECTS: 'subjects',
+                self.COL_LOCATION: 'location',
             }
 
             for col, field in vocab_columns.items():
@@ -7213,37 +7239,28 @@ class MainWindow(QMainWindow):
         else:
             self.add_thumbnail(row, self.COL_THUMBNAIL, photo['filepath'])
         
-        self.photo_table.setItem(row, self.COL_TYPE, QTableWidgetItem(photo['type_of_shot'] or ''))
-        self.photo_table.setItem(row, self.COL_POSE, QTableWidgetItem(photo['pose'] or ''))
-        self.photo_table.setItem(row, self.COL_FACING, QTableWidgetItem(photo['facing_direction'] or ''))
-        self.photo_table.setItem(row, self.COL_LEVEL, QTableWidgetItem(photo['explicit_level'] or ''))
-        self.photo_table.setItem(row, self.COL_COLOR, QTableWidgetItem(photo['color_of_clothing'] or ''))
-        self.photo_table.setItem(row, self.COL_MATERIAL, QTableWidgetItem(photo['material'] or ''))
-        self.photo_table.setItem(row, self.COL_CLOTHING, QTableWidgetItem(photo['type_clothing'] or ''))
-        self.photo_table.setItem(row, self.COL_FOOTWEAR, QTableWidgetItem(photo['footwear'] or ''))
-        location_item = QTableWidgetItem(photo['location'] or '')
-        location_item.setToolTip(f"Location: {photo['location'] or 'Not set'}")
+        self.photo_table.setItem(row, self.COL_SCENE, QTableWidgetItem(photo.get('scene_type') or ''))
+        self.photo_table.setItem(row, self.COL_MOOD, QTableWidgetItem(photo.get('mood') or ''))
+        self.photo_table.setItem(row, self.COL_SUBJECTS, QTableWidgetItem(photo.get('subjects') or ''))
+        location_item = QTableWidgetItem(photo.get('location') or '')
+        location_item.setToolTip(f"Location: {photo.get('location') or 'Not set'}")
         self.photo_table.setItem(row, self.COL_LOCATION, location_item)
-        
-        # Status text (column 12)
+        self.photo_table.setItem(row, self.COL_OBJECTS, QTableWidgetItem(photo.get('objects_detected') or ''))
+
+        # Status text
         status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready for Release', 'released': 'Released'}
         self.photo_table.setItem(row, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
-        
-        # Checkboxes for release status (columns 13-15)
+
+        # Checkboxes for release status
         ig_item = QTableWidgetItem()
         ig_item.setFlags(ig_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         ig_item.setCheckState(Qt.CheckState.Checked if photo['released_instagram'] else Qt.CheckState.Unchecked)
         self.photo_table.setItem(row, self.COL_IG, ig_item)
-        
+
         tiktok_item = QTableWidgetItem()
         tiktok_item.setFlags(tiktok_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         tiktok_item.setCheckState(Qt.CheckState.Checked if photo['released_tiktok'] else Qt.CheckState.Unchecked)
         self.photo_table.setItem(row, self.COL_TIKTOK, tiktok_item)
-        
-        fansly_item = QTableWidgetItem()
-        fansly_item.setFlags(fansly_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-        fansly_item.setCheckState(Qt.CheckState.Checked if photo['released_fansly'] else Qt.CheckState.Unchecked)
-        self.photo_table.setItem(row, self.COL_FANSLY, fansly_item)
         
         packages = [] if is_batch_analyzing else self.db.get_packages(photo['id'])
         package_display = ', '.join(packages) if packages else (photo.get('package_name') or '')
@@ -7507,61 +7524,54 @@ class MainWindow(QMainWindow):
         show_only_unknowns = self.filter_unknowns.isChecked()
         
         # Get metadata filter values
-        filter_type = self.filter_type.currentText() if self.filter_type.currentText() != "(Any)" else ""
-        filter_pose = self.filter_pose.currentText() if self.filter_pose.currentText() != "(Any)" else ""
-        filter_facing = self.filter_facing.currentText() if self.filter_facing.currentText() != "(Any)" else ""
-        filter_level = self.filter_level.currentText() if self.filter_level.currentText() != "(Any)" else ""
-        filter_color = self.filter_color.text().strip().lower()
-        filter_material = self.filter_material.text().strip().lower()
-        filter_clothing = self.filter_clothing.text().strip().lower()
-        filter_footwear = self.filter_footwear.text().strip().lower()
-        filter_location = self.filter_location.text().strip().lower()
-        filter_package = self.filter_package.text().strip().lower()
-        face_match_filter = self.filter_face_match.currentText() if hasattr(self, 'filter_face_match') else "(Any)"
-        
+        filter_scene = self.filter_scene.currentText() if hasattr(self, 'filter_scene') and self.filter_scene.currentText() != "(Any)" else ""
+        filter_mood = self.filter_mood.currentText() if hasattr(self, 'filter_mood') and self.filter_mood.currentText() != "(Any)" else ""
+        filter_subjects = self.filter_subjects.currentText() if hasattr(self, 'filter_subjects') and self.filter_subjects.currentText() != "(Any)" else ""
+        filter_location = self.filter_location.text().strip().lower() if hasattr(self, 'filter_location') else ""
+        filter_package = self.filter_package.text().strip().lower() if hasattr(self, 'filter_package') else ""
+
+        # New filters — read from FiltersTab widget if it exists, else from inline attrs
+        _ft = getattr(self, 'filters_tab', None)
+        filter_quality = ""
+        filter_has_exif = False
+        filter_has_gps = False
+        if _ft:
+            q = _ft.filter_quality.currentText()
+            filter_quality = q if q != "(Any)" else ""
+            filter_has_exif = _ft.filter_has_exif.isChecked()
+            filter_has_gps = _ft.filter_has_gps.isChecked()
+        filter_tag = _ft.filter_tag.text().strip().lower() if _ft else ""
+
         # Filter photos
         filtered_photos = []
         for photo in all_photos:
             # Unknown values filter
             if show_only_unknowns:
                 has_unknown = False
-                ai_fields = ['type_of_shot', 'pose', 'facing_direction', 'explicit_level', 
-                           'color_of_clothing', 'material', 'type_clothing', 'footwear', 'location']
+                ai_fields = ['scene_type', 'mood', 'subjects', 'location']
                 for field in ai_fields:
                     if photo.get(field) == 'unknown':
                         has_unknown = True
                         break
                 if not has_unknown:
                     continue
-            
+
             # Status filter
             if status_filters and photo.get('status', 'raw') not in status_filters:
                 continue
             
             # Platform filters
-            if self.filter_ig.isChecked() and not photo['released_instagram']:
+            if hasattr(self, 'filter_ig') and self.filter_ig.isChecked() and not photo['released_instagram']:
                 continue
-            if self.filter_tiktok.isChecked() and not photo['released_tiktok']:
+            if hasattr(self, 'filter_tiktok') and self.filter_tiktok.isChecked() and not photo['released_tiktok']:
                 continue
-            if self.filter_fansly.isChecked() and not photo['released_fansly']:
-                continue
-            
+
             # Metadata filters (case-insensitive partial match)
-            if filter_type and filter_type.lower() not in (photo.get('type_of_shot') or '').lower():
+            if filter_scene and filter_scene.lower() not in (photo.get('scene_type') or '').lower():
                 continue
-            if filter_pose and filter_pose.lower() not in (photo.get('pose') or '').lower():
+            if filter_mood and filter_mood.lower() not in (photo.get('mood') or '').lower():
                 continue
-            if filter_facing and filter_facing.lower() not in (photo.get('facing_direction') or '').lower():
-                continue
-            if filter_level and filter_level.lower() not in (photo.get('explicit_level') or '').lower():
-                continue
-            if filter_color and filter_color not in (photo.get('color_of_clothing') or '').lower():
-                continue
-            if filter_material and filter_material not in (photo.get('material') or '').lower():
-                continue
-            if filter_clothing and filter_clothing not in (photo.get('type_clothing') or '').lower():
-                continue
-            if filter_footwear and filter_footwear not in (photo.get('footwear') or '').lower():
+            if filter_subjects and filter_subjects.lower() not in (photo.get('subjects') or '').lower():
                 continue
             if filter_location and filter_location not in (photo.get('location') or '').lower():
                 continue
@@ -7571,29 +7581,15 @@ class MainWindow(QMainWindow):
                 legacy_match = filter_package in (photo.get('package_name') or '').lower()
                 if not (pkg_match or legacy_match):
                     continue
+            if filter_quality and (photo.get('quality') or '') != filter_quality:
+                continue
+            if filter_has_exif and not photo.get('exif_camera'):
+                continue
+            if filter_has_gps and not (photo.get('exif_gps_lat') and photo.get('exif_gps_lon')):
+                continue
+            if filter_tag and filter_tag not in (photo.get('tags') or '').lower():
+                continue
 
-            # Face match rating filter
-            if face_match_filter and face_match_filter != "(Any)":
-                rating = int(photo.get('face_similarity') or 0)
-                if face_match_filter == "Unrated":
-                    if rating != 0:
-                        continue
-                elif face_match_filter == "5 stars":
-                    if rating != 5:
-                        continue
-                elif face_match_filter == "4-5 stars":
-                    if rating < 4:
-                        continue
-                elif face_match_filter == "3-5 stars":
-                    if rating < 3:
-                        continue
-                elif face_match_filter == "2-5 stars":
-                    if rating < 2:
-                        continue
-                elif face_match_filter == "1-5 stars":
-                    if rating < 1:
-                        continue
-            
             filtered_photos.append(photo)
         
         # Populate table with filtered results
@@ -7614,66 +7610,48 @@ class MainWindow(QMainWindow):
             
             # Add thumbnail
             self.add_thumbnail(i, 1, photo['filepath'])
-            
-            self.photo_table.setItem(i, 2, QTableWidgetItem(photo['type_of_shot'] or ''))
-            self.photo_table.setItem(i, 3, QTableWidgetItem(photo['pose'] or ''))
-            self.photo_table.setItem(i, 4, QTableWidgetItem(photo['facing_direction'] or ''))
-            self.photo_table.setItem(i, 5, QTableWidgetItem(photo['explicit_level'] or ''))
-            self.photo_table.setItem(i, 6, QTableWidgetItem(photo['color_of_clothing'] or ''))
-            self.photo_table.setItem(i, 7, QTableWidgetItem(photo['material'] or ''))
-            self.photo_table.setItem(i, 8, QTableWidgetItem(photo['type_clothing'] or ''))
-            self.photo_table.setItem(i, 9, QTableWidgetItem(photo['footwear'] or ''))
-            self.photo_table.setItem(i, 10, QTableWidgetItem(photo['location'] or ''))
-            
+
+            # AI metadata columns (new general fields)
+            self.photo_table.setItem(i, self.COL_SCENE, QTableWidgetItem(photo.get('scene_type') or ''))
+            self.photo_table.setItem(i, self.COL_MOOD, QTableWidgetItem(photo.get('mood') or ''))
+            self.photo_table.setItem(i, self.COL_SUBJECTS, QTableWidgetItem(photo.get('subjects') or ''))
+            self.photo_table.setItem(i, self.COL_LOCATION, QTableWidgetItem(photo.get('location') or ''))
+            self.photo_table.setItem(i, self.COL_OBJECTS, QTableWidgetItem(photo.get('objects_detected') or ''))
+
             # Status text
             status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready for Release', 'released': 'Released'}
-            self.photo_table.setItem(i, 11, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
-            
+            self.photo_table.setItem(i, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
+
             # Checkboxes for release status
             ig_item = QTableWidgetItem()
             ig_item.setFlags(ig_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             ig_item.setCheckState(Qt.CheckState.Checked if photo['released_instagram'] else Qt.CheckState.Unchecked)
-            self.photo_table.setItem(i, 12, ig_item)
-            
+            self.photo_table.setItem(i, self.COL_IG, ig_item)
+
             tiktok_item = QTableWidgetItem()
             tiktok_item.setFlags(tiktok_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             tiktok_item.setCheckState(Qt.CheckState.Checked if photo['released_tiktok'] else Qt.CheckState.Unchecked)
-            self.photo_table.setItem(i, 13, tiktok_item)
-            
-            fansly_item = QTableWidgetItem()
-            fansly_item.setFlags(fansly_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            fansly_item.setCheckState(Qt.CheckState.Checked if photo['released_fansly'] else Qt.CheckState.Unchecked)
-            self.photo_table.setItem(i, 14, fansly_item)
-            
+            self.photo_table.setItem(i, self.COL_TIKTOK, tiktok_item)
+
             packages = self.db.get_packages(photo['id'])
             package_display = ', '.join(packages) if packages else (photo.get('package_name') or '')
-            self.photo_table.setItem(i, 15, QTableWidgetItem(package_display))
-            
-            # Tags column
-            self.photo_table.setItem(i, 16, QTableWidgetItem(photo['tags'] or ''))
-            
-            # Face Match rating (column 17)
-            face_match = photo.get('face_similarity', 0)
-            if face_match > 0:
-                stars = "⭐" * face_match
-                self.photo_table.setItem(i, 17, QTableWidgetItem(stars))
-            else:
-                self.photo_table.setItem(i, 17, QTableWidgetItem(""))
-            
-            # Date Created - read only (column 18) without fractional seconds
+            self.photo_table.setItem(i, self.COL_PACKAGE, QTableWidgetItem(package_display))
+
+            self.photo_table.setItem(i, self.COL_TAGS, QTableWidgetItem(photo.get('tags') or ''))
+
+            # Date Created - read only, without fractional seconds
             raw_date = str(photo['date_created'] or '')
             if '.' in raw_date:
                 raw_date = raw_date.split('.')[0]
             date_item = QTableWidgetItem(raw_date)
             date_item.setFlags(date_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.photo_table.setItem(i, 18, date_item)
-            
+            self.photo_table.setItem(i, self.COL_DATE, date_item)
+
             filepath_item = QTableWidgetItem(photo['filepath'] or '')
             filepath_item.setToolTip(photo['filepath'] or 'No path')
-            self.photo_table.setItem(i, 19, filepath_item)
+            self.photo_table.setItem(i, self.COL_FILEPATH, filepath_item)
 
-            # Notes column (20)
-            self.photo_table.setItem(i, 20, QTableWidgetItem(photo.get('notes') or ''))
+            self.photo_table.setItem(i, self.COL_NOTES, QTableWidgetItem(photo.get('notes') or ''))
         
         self.photo_table.setSortingEnabled(True)
         self.statusBar().showMessage(f"Filtered: {len(filtered_photos)} of {len(all_photos)} photos", 5000)
@@ -7690,23 +7668,22 @@ class MainWindow(QMainWindow):
         self.filter_released.setChecked(False)
         
         # Platform filters
-        self.filter_ig.setChecked(False)
-        self.filter_tiktok.setChecked(False)
-        self.filter_fansly.setChecked(False)
-        
+        if hasattr(self, 'filter_ig'):
+            self.filter_ig.setChecked(False)
+        if hasattr(self, 'filter_tiktok'):
+            self.filter_tiktok.setChecked(False)
+
         # Metadata filters
-        self.filter_type.setCurrentIndex(0)
-        self.filter_pose.setCurrentIndex(0)
-        self.filter_facing.setCurrentIndex(0)
-        self.filter_level.setCurrentIndex(0)
-        self.filter_color.clear()
-        self.filter_material.clear()
-        self.filter_clothing.clear()
-        self.filter_footwear.clear()
-        self.filter_location.clear()
-        self.filter_package.clear()
-        if hasattr(self, 'filter_face_match'):
-            self.filter_face_match.setCurrentIndex(0)
+        if hasattr(self, 'filter_scene'):
+            self.filter_scene.setCurrentIndex(0)
+        if hasattr(self, 'filter_mood'):
+            self.filter_mood.setCurrentIndex(0)
+        if hasattr(self, 'filter_subjects'):
+            self.filter_subjects.setCurrentIndex(0)
+        if hasattr(self, 'filter_location'):
+            self.filter_location.clear()
+        if hasattr(self, 'filter_package'):
+            self.filter_package.clear()
         
         self.refresh_photos()
         self.refresh_gallery()
@@ -7726,7 +7703,7 @@ class MainWindow(QMainWindow):
             return
         
         # Filter out non-editable columns (checkbox, ID, thumbnail, release toggles, date)
-        non_editable = [self.COL_CHECKBOX, self.COL_ID, self.COL_THUMBNAIL, self.COL_IG, self.COL_TIKTOK, self.COL_FANSLY, self.COL_DATE]
+        non_editable = [self.COL_CHECKBOX, self.COL_ID, self.COL_THUMBNAIL, self.COL_IG, self.COL_TIKTOK, self.COL_DATE]
         editable_items = [item for item in selected_items if item.column() not in non_editable]
         
         if not editable_items:
@@ -7735,15 +7712,11 @@ class MainWindow(QMainWindow):
         
         # Get the column name for display
         column_names = {
-            self.COL_TYPE: 'Type',
-            self.COL_POSE: 'Pose',
-            self.COL_FACING: 'Facing',
-            self.COL_LEVEL: 'Level',
-            self.COL_COLOR: 'Color',
-            self.COL_MATERIAL: 'Material',
-            self.COL_CLOTHING: 'Clothing',
-            self.COL_FOOTWEAR: 'Footwear',
+            self.COL_SCENE: 'Scene',
+            self.COL_MOOD: 'Mood',
+            self.COL_SUBJECTS: 'Subjects',
             self.COL_LOCATION: 'Location',
+            self.COL_OBJECTS: 'Objects',
             self.COL_STATUS: 'Status',
             self.COL_PACKAGE: 'Package',
             self.COL_TAGS: 'Tags',
@@ -7770,8 +7743,7 @@ class MainWindow(QMainWindow):
             self.photo_table.blockSignals(True)
             
             # AI fields that should track corrections
-            ai_fields = ['type_of_shot', 'pose', 'facing_direction', 'explicit_level', 
-                        'color_of_clothing', 'material', 'type_clothing', 'footwear', 'location']
+            ai_fields = ['scene_type', 'mood', 'subjects', 'location', 'objects_detected']
             
             updates = []
             tags_updated = False
@@ -7854,7 +7826,6 @@ class MainWindow(QMainWindow):
         column_map = {
             'released_instagram': self.COL_IG,
             'released_tiktok': self.COL_TIKTOK,
-            'released_fansly': self.COL_FANSLY
         }
         col = column_map[platform]
         
@@ -8147,9 +8118,24 @@ class MainWindow(QMainWindow):
         """Handle window close event"""
         if self.analyzer_thread and self.analyzer_thread.isRunning():
             self.analyzer_thread.stop()
-            # Wait for thread with timeout to prevent freeze
-            if not self.analyzer_thread.wait(2000):  # 2 second timeout
+            if not self.analyzer_thread.wait(2000):
                 self.analyzer_thread.terminate()
+        # Stop scheduler worker
+        try:
+            w = getattr(self, '_scheduler_worker', None)
+            if w and w.isRunning():
+                w.stop()
+                w.wait(2000)
+        except Exception:
+            pass
+        # Stop folder watcher if running
+        try:
+            fw = getattr(self, '_folder_watcher', None)
+            if fw and fw.isRunning():
+                fw.stop()
+                fw.wait(1000)
+        except Exception:
+            pass
         self.db.close()
         event.accept()
 

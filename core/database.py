@@ -1,5 +1,5 @@
 """
-Database management for Nova Photo Manager
+Database management for PhotoFlow
 """
 import sqlite3
 from datetime import datetime
@@ -34,7 +34,7 @@ class CredentialEncryption:
             return ""
 
 class PhotoDatabase:
-    def __init__(self, db_path="data/nova_photos.db"):
+    def __init__(self, db_path="data/photos.db"):
         """Initialize database connection"""
         self.db_path = db_path
         self.conn = None
@@ -53,17 +53,48 @@ class PhotoDatabase:
         self.ensure_columns()
     
     def ensure_columns(self):
-        """Ensure new columns exist in existing databases"""
+        """Ensure new columns exist in existing databases (safe forward migration)"""
         try:
-            # Check for face_similarity and face_match_rating columns
             self.cursor.execute("PRAGMA table_info(photos)")
             cols = [row['name'] for row in self.cursor.fetchall()]
-            if 'face_similarity' not in cols:
-                self.cursor.execute("ALTER TABLE photos ADD COLUMN face_similarity INTEGER DEFAULT 0")
-                self.conn.commit()
-            if 'face_match_rating' not in cols:
-                self.cursor.execute("ALTER TABLE photos ADD COLUMN face_match_rating INTEGER DEFAULT 0")
-                self.conn.commit()
+
+            new_cols = [
+                ("face_similarity", "INTEGER DEFAULT 0"),
+                ("face_match_rating", "INTEGER DEFAULT 0"),
+                ("scene_type", "TEXT DEFAULT ''"),
+                ("composition", "TEXT DEFAULT ''"),
+                ("subjects", "TEXT DEFAULT ''"),
+                ("dominant_colors", "TEXT DEFAULT ''"),
+                ("objects_detected", "TEXT DEFAULT ''"),
+                ("mood", "TEXT DEFAULT ''"),
+                ("ai_caption", "TEXT DEFAULT ''"),
+                ("suggested_hashtags", "TEXT DEFAULT ''"),
+                ("perceptual_hash", "TEXT DEFAULT ''"),
+                ("file_size_kb", "INTEGER DEFAULT 0"),
+                ("image_width", "INTEGER DEFAULT 0"),
+                ("image_height", "INTEGER DEFAULT 0"),
+                ("color_profile", "TEXT DEFAULT ''"),
+                ("content_rating", "TEXT DEFAULT 'general'"),
+                ("platform_status", "TEXT DEFAULT '{}'"),
+                ("exif_camera", "TEXT DEFAULT ''"),
+                ("exif_lens", "TEXT DEFAULT ''"),
+                ("exif_focal_length", "TEXT DEFAULT ''"),
+                ("exif_iso", "TEXT DEFAULT ''"),
+                ("exif_aperture", "TEXT DEFAULT ''"),
+                ("exif_shutter", "TEXT DEFAULT ''"),
+                ("exif_gps_lat", "REAL DEFAULT NULL"),
+                ("exif_gps_lon", "REAL DEFAULT NULL"),
+                ("exif_date_taken", "TIMESTAMP DEFAULT NULL"),
+                ("blur_score", "REAL DEFAULT 0.0"),
+                ("exposure_score", "REAL DEFAULT 0.5"),
+                ("quality", "TEXT DEFAULT ''"),
+                ("quality_issues", "TEXT DEFAULT ''"),
+                ("file_hash", "TEXT DEFAULT ''"),
+            ]
+            for col_name, col_def in new_cols:
+                if col_name not in cols:
+                    self.cursor.execute(f"ALTER TABLE photos ADD COLUMN {col_name} {col_def}")
+            self.conn.commit()
         except Exception as e:
             print(f"Warning: could not ensure columns: {e}")
     
@@ -171,7 +202,52 @@ class PhotoDatabase:
                 FOREIGN KEY (photo_id) REFERENCES photos(id)
             )
         ''')
-        
+
+        # Albums table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS albums (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                cover_photo_id INTEGER REFERENCES photos(id),
+                date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                date_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sort_order INTEGER DEFAULT 0,
+                is_smart INTEGER DEFAULT 0,
+                smart_filter TEXT DEFAULT ''
+            )
+        ''')
+
+        # Album-photo junction table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS album_photos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                album_id INTEGER REFERENCES albums(id) ON DELETE CASCADE,
+                photo_id INTEGER REFERENCES photos(id) ON DELETE CASCADE,
+                sort_order INTEGER DEFAULT 0,
+                date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(album_id, photo_id)
+            )
+        ''')
+
+        # Scheduled posts table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS scheduled_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                photo_id INTEGER REFERENCES photos(id),
+                platform TEXT NOT NULL,
+                caption TEXT DEFAULT '',
+                hashtags TEXT DEFAULT '',
+                post_type TEXT DEFAULT 'feed',
+                scheduled_time TIMESTAMP NOT NULL,
+                status TEXT DEFAULT 'pending',
+                error_message TEXT DEFAULT '',
+                post_url TEXT DEFAULT '',
+                post_id TEXT DEFAULT '',
+                date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         self.conn.commit()
         self.migrate_schema()
         self.migrate_vocabulary_descriptions()
@@ -301,16 +377,16 @@ class PhotoDatabase:
         params = []
         
         if filters:
-            if filters.get('needs_editing'):
-                query += ' AND needs_editing = 1'
-            if filters.get('ready'):
-                query += ' AND ready = 1'
+            if filters.get('status'):
+                query += ' AND status = ?'
+                params.append(filters['status'])
             if filters.get('released_instagram'):
                 query += ' AND released_instagram = 1'
             if filters.get('released_tiktok'):
                 query += ' AND released_tiktok = 1'
-            if filters.get('released_fansly'):
-                query += ' AND released_fansly = 1'
+            if filters.get('scene_type'):
+                query += ' AND scene_type = ?'
+                params.append(filters['scene_type'])
             if filters.get('package_name'):
                 query += ' AND package_name = ?'
                 params.append(filters['package_name'])
@@ -483,16 +559,19 @@ class PhotoDatabase:
         
         # Default vocabularies for each field
         default_vocabs = {
-            'type_of_shot': ['selfie', 'portrait', 'fullbody', 'closeup'],
-            'pose': ['standing', 'sitting', 'lying', 'kneeling', 'leaning'],
-            'facing_direction': ['camera', 'away', 'up', 'down', 'left', 'right'],
-            'explicit_level': ['sfw', 'mild', 'suggestive', 'explicit'],
-            'color_of_clothing': ['white', 'beige', 'cream', 'pink', 'black', 'blue', 'red', 'green', 'nude'],
-            'material': ['sheer', 'satin', 'lace', 'cotton', 'silk', 'leather', 'none'],
-            'type_clothing': ['robe', 'tanktop', 'tshirt', 'dress', 'bikini', 'lingerie', 'pants', 'shorts', 'skirt', 'nude'],
-            'footwear': ['barefoot', 'shoes', 'socks', 'heels', 'boots', 'sandals', 'hose', 'stockings'],
+            'scene_type': ['portrait', 'landscape', 'street', 'event', 'food', 'product',
+                           'travel', 'architecture', 'macro', 'abstract', 'sports', 'nature',
+                           'night', 'interior'],
+            'composition': ['closeup', 'medium', 'wide', 'aerial', 'detail'],
+            'subjects': ['people', 'animal', 'vehicle', 'building', 'food', 'plant',
+                         'sky', 'water', 'none'],
+            'mood': ['bright', 'dark', 'dramatic', 'cozy', 'energetic', 'calm',
+                     'romantic', 'mysterious', 'playful'],
+            'content_rating': ['general', 'mature', 'restricted'],
             'interior_exterior': ['interior', 'exterior'],
-            'location': ['bed', 'beach', 'bath', 'restaurant', 'office', 'desk', 'couch', 'chair', 'kitchen', 'bedroom', 'bathroom']
+            'location': ['indoor', 'outdoor', 'urban', 'nature', 'studio', 'beach',
+                         'mountain', 'forest', 'city', 'home', 'office', 'restaurant',
+                         'cafe', 'park', 'street', 'market'],
         }
         
         for field, values in default_vocabs.items():
@@ -694,6 +773,118 @@ class PhotoDatabase:
         else:
             return 'unknown'
     
+    # --- Album helpers ---
+    def create_album(self, name, description='', is_smart=0, smart_filter=''):
+        """Create a new album"""
+        self.cursor.execute('''
+            INSERT INTO albums (name, description, is_smart, smart_filter)
+            VALUES (?, ?, ?, ?)
+        ''', (name, description, is_smart, smart_filter))
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_albums(self):
+        """Get all albums ordered by sort_order then name"""
+        self.cursor.execute('SELECT * FROM albums ORDER BY sort_order, name')
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_album_photos(self, album_id):
+        """Get all photos in an album"""
+        self.cursor.execute('''
+            SELECT p.* FROM photos p
+            JOIN album_photos ap ON p.id = ap.photo_id
+            WHERE ap.album_id = ?
+            ORDER BY ap.sort_order, ap.date_added
+        ''', (album_id,))
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def add_photo_to_album(self, album_id, photo_id):
+        """Add a photo to an album"""
+        try:
+            self.cursor.execute(
+                'INSERT OR IGNORE INTO album_photos (album_id, photo_id) VALUES (?, ?)',
+                (album_id, photo_id)
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding photo to album: {e}")
+            return False
+
+    def remove_photo_from_album(self, album_id, photo_id):
+        """Remove a photo from an album"""
+        self.cursor.execute(
+            'DELETE FROM album_photos WHERE album_id = ? AND photo_id = ?',
+            (album_id, photo_id)
+        )
+        self.conn.commit()
+
+    def delete_album(self, album_id):
+        """Delete an album (photos are NOT deleted)"""
+        self.cursor.execute('DELETE FROM album_photos WHERE album_id = ?', (album_id,))
+        self.cursor.execute('DELETE FROM albums WHERE id = ?', (album_id,))
+        self.conn.commit()
+
+    def rename_album(self, album_id, new_name):
+        """Rename an album"""
+        self.cursor.execute(
+            'UPDATE albums SET name = ?, date_modified = CURRENT_TIMESTAMP WHERE id = ?',
+            (new_name, album_id)
+        )
+        self.conn.commit()
+
+    # --- Scheduled post helpers ---
+    def schedule_post(self, photo_id, platform, caption, hashtags, scheduled_time, post_type='feed', status='pending', post_id=''):
+        """Schedule a post for later"""
+        self.cursor.execute('''
+            INSERT INTO scheduled_posts (photo_id, platform, caption, hashtags, post_type, scheduled_time, status, post_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (photo_id, platform.lower(), caption, hashtags, post_type, scheduled_time, status, post_id))
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_scheduled_posts(self, status=None, platform=None):
+        """Get scheduled posts with optional filters"""
+        query = 'SELECT * FROM scheduled_posts WHERE 1=1'
+        params = []
+        if status:
+            query += ' AND status = ?'
+            params.append(status)
+        if platform:
+            query += ' AND platform = ?'
+            params.append(platform.lower())
+        query += ' ORDER BY scheduled_time ASC'
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def update_scheduled_post_status(self, post_id, status, post_url='', post_id_str='', error_msg=''):
+        """Update the status of a scheduled post after sending"""
+        self.cursor.execute('''
+            UPDATE scheduled_posts SET status = ?, post_url = ?, post_id = ?, error_message = ?
+            WHERE id = ?
+        ''', (status, post_url, post_id_str, error_msg, post_id))
+        self.conn.commit()
+
+    # --- Credential aliases (short names used by new UI tabs) ---
+
+    def save_credentials(self, platform: str, credentials: dict) -> bool:
+        """Alias for store_api_credentials."""
+        return self.store_api_credentials(platform, credentials)
+
+    def get_credentials(self, platform: str) -> dict:
+        """Alias for get_api_credentials."""
+        return self.get_api_credentials(platform)
+
+    def delete_scheduled_post(self, post_id: int) -> bool:
+        """Delete a scheduled post record by id."""
+        try:
+            self.cursor.execute('DELETE FROM scheduled_posts WHERE id = ?', (post_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting scheduled post: {e}")
+            return False
+
     def close(self):
         """Close database connection"""
         if self.conn:

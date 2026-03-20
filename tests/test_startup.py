@@ -4,6 +4,12 @@
 import sys
 import os
 
+# Ensure project root is on the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Force UTF-8 output on Windows
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 # Set display to null for headless testing
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 

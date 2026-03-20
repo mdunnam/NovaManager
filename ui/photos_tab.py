@@ -20,8 +20,9 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPixmap
+from core.icons import icon as _icon
 
 
 class PhotosTab(QWidget):
@@ -31,24 +32,19 @@ class PhotosTab(QWidget):
     COL_CHECKBOX = 0
     COL_ID = 1
     COL_THUMBNAIL = 2
-    COL_TYPE = 3
-    COL_POSE = 4
-    COL_FACING = 5
-    COL_LEVEL = 6
-    COL_COLOR = 7
-    COL_MATERIAL = 8
-    COL_CLOTHING = 9
-    COL_FOOTWEAR = 10
-    COL_LOCATION = 11
-    COL_STATUS = 12
-    COL_IG = 13
-    COL_TIKTOK = 14
-    COL_FANSLY = 15
-    COL_PACKAGE = 16
-    COL_TAGS = 17
-    COL_DATE = 18
-    COL_FILEPATH = 19
-    COL_NOTES = 20
+    COL_SCENE = 3
+    COL_MOOD = 4
+    COL_SUBJECTS = 5
+    COL_LOCATION = 6
+    COL_OBJECTS = 7
+    COL_STATUS = 8
+    COL_IG = 9
+    COL_TIKTOK = 10
+    COL_PACKAGE = 11
+    COL_TAGS = 12
+    COL_DATE = 13
+    COL_FILEPATH = 14
+    COL_NOTES = 15
 
     def __init__(self, controller):
         super().__init__()
@@ -70,47 +66,57 @@ class PhotosTab(QWidget):
         toolbar = QHBoxLayout()
 
         refresh_btn = QPushButton()
-        refresh_btn.setIcon(self.controller.get_icon("refresh.png", "↻"))
-        refresh_btn.setIconSize(self.controller.icon_size)
+        refresh_btn.setIcon(_icon('refresh'))
+        refresh_btn.setIconSize(QSize(18, 18))
         refresh_btn.setToolTip("Refresh photo table")
         refresh_btn.clicked.connect(self.refresh)
         toolbar.addWidget(refresh_btn)
 
         reanalyze_btn = QPushButton()
-        reanalyze_btn.setIcon(self.controller.get_icon("reanalyze.png", "AI"))
-        reanalyze_btn.setIconSize(self.controller.icon_size)
+        reanalyze_btn.setIcon(_icon('reanalyze'))
+        reanalyze_btn.setIconSize(QSize(18, 18))
         reanalyze_btn.setToolTip("Re-analyze selected photos with AI")
         reanalyze_btn.clicked.connect(self.reanalyze_selected)
         toolbar.addWidget(reanalyze_btn)
 
         train_ai_btn = QPushButton()
-        train_ai_btn.setIcon(self.controller.get_icon("train.png", "T"))
-        train_ai_btn.setIconSize(self.controller.icon_size)
+        train_ai_btn.setIcon(_icon('train'))
+        train_ai_btn.setIconSize(QSize(18, 18))
         train_ai_btn.setToolTip("Train AI: Re-analyze using learned corrections")
         train_ai_btn.clicked.connect(self.reanalyze_selected)
         toolbar.addWidget(train_ai_btn)
 
         batch_retouch_btn = QPushButton("Batch Retouch")
+        batch_retouch_btn.setIcon(_icon('batch_retouch'))
+        batch_retouch_btn.setIconSize(QSize(16, 16))
         batch_retouch_btn.setToolTip("Apply AI blemish retouch to checked/selected photos")
         batch_retouch_btn.clicked.connect(self.controller.batch_ai_retouch_selected)
         toolbar.addWidget(batch_retouch_btn)
 
         test_retouch_btn = QPushButton("Test 1 Photo")
+        test_retouch_btn.setIcon(_icon('test_photo'))
+        test_retouch_btn.setIconSize(QSize(16, 16))
         test_retouch_btn.setToolTip("Run AI blemish retouch on one checked/selected photo")
         test_retouch_btn.clicked.connect(self.controller.batch_ai_retouch_test_one)
         toolbar.addWidget(test_retouch_btn)
 
         preset_subtle_btn = QPushButton("Subtle")
+        preset_subtle_btn.setIcon(_icon('subtle'))
+        preset_subtle_btn.setIconSize(QSize(16, 16))
         preset_subtle_btn.setToolTip("Batch preset: telea, radius 2, padding 1")
         preset_subtle_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("subtle"))
         toolbar.addWidget(preset_subtle_btn)
 
         preset_balanced_btn = QPushButton("Balanced")
+        preset_balanced_btn.setIcon(_icon('balanced'))
+        preset_balanced_btn.setIconSize(QSize(16, 16))
         preset_balanced_btn.setToolTip("Batch preset: telea, radius 3, padding 2")
         preset_balanced_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("balanced"))
         toolbar.addWidget(preset_balanced_btn)
 
         preset_strong_btn = QPushButton("Strong")
+        preset_strong_btn.setIcon(_icon('strong'))
+        preset_strong_btn.setIconSize(QSize(16, 16))
         preset_strong_btn.setToolTip("Batch preset: ns, radius 5, padding 3")
         preset_strong_btn.clicked.connect(lambda: self.controller.apply_batch_retouch_preset("strong"))
         toolbar.addWidget(preset_strong_btn)
@@ -121,11 +127,15 @@ class PhotosTab(QWidget):
         self._refresh_batch_settings_label()
 
         revert_retouch_btn = QPushButton("Revert Retouch")
+        revert_retouch_btn.setIcon(_icon('revert'))
+        revert_retouch_btn.setIconSize(QSize(16, 16))
         revert_retouch_btn.setToolTip("Revert last overwrite retouch for checked/selected photos")
         revert_retouch_btn.clicked.connect(self.controller.revert_last_retouch_selected)
         toolbar.addWidget(revert_retouch_btn)
 
         history_btn = QPushButton("Retouch History")
+        history_btn.setIcon(_icon('retouch_history'))
+        history_btn.setIconSize(QSize(16, 16))
         history_btn.setToolTip("View retouch audit history and revert a selected entry")
         history_btn.clicked.connect(self.controller.open_retouch_history_dialog)
         toolbar.addWidget(history_btn)
@@ -139,6 +149,8 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.batch_package)
 
         apply_package_btn = QPushButton("Set Package")
+        apply_package_btn.setIcon(_icon('package'))
+        apply_package_btn.setIconSize(QSize(16, 16))
         apply_package_btn.clicked.connect(self.apply_package)
         toolbar.addWidget(apply_package_btn)
 
@@ -148,6 +160,8 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.batch_status)
 
         apply_status_quick_btn = QPushButton("Set Status")
+        apply_status_quick_btn.setIcon(_icon('status'))
+        apply_status_quick_btn.setIconSize(QSize(16, 16))
         apply_status_quick_btn.clicked.connect(self.apply_quick_status)
         toolbar.addWidget(apply_status_quick_btn)
 
@@ -157,6 +171,8 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.batch_tags)
 
         append_tags_btn = QPushButton("Append Tags")
+        append_tags_btn.setIcon(_icon('tag'))
+        append_tags_btn.setIconSize(QSize(16, 16))
         append_tags_btn.clicked.connect(self.append_tags)
         toolbar.addWidget(append_tags_btn)
 
@@ -166,6 +182,8 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.batch_notes)
 
         append_notes_btn = QPushButton("Append Notes")
+        append_notes_btn.setIcon(_icon('notes'))
+        append_notes_btn.setIconSize(QSize(16, 16))
         append_notes_btn.clicked.connect(self.append_notes)
         toolbar.addWidget(append_notes_btn)
 
@@ -179,15 +197,21 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.smart_preset_combo)
 
         apply_preset_btn = QPushButton("Smart Apply")
+        apply_preset_btn.setIcon(_icon('smart'))
+        apply_preset_btn.setIconSize(QSize(16, 16))
         apply_preset_btn.clicked.connect(self.apply_smart_preset)
         toolbar.addWidget(apply_preset_btn)
 
         add_preset_btn = QPushButton("Preset +")
+        add_preset_btn.setIcon(_icon('preset_add'))
+        add_preset_btn.setIconSize(QSize(16, 16))
         add_preset_btn.setToolTip("Add custom smart status preset")
         add_preset_btn.clicked.connect(self.add_custom_smart_preset)
         toolbar.addWidget(add_preset_btn)
 
         remove_preset_btn = QPushButton("Preset -")
+        remove_preset_btn.setIcon(_icon('preset_remove'))
+        remove_preset_btn.setIconSize(QSize(16, 16))
         remove_preset_btn.setToolTip("Remove selected custom smart preset")
         remove_preset_btn.clicked.connect(self.remove_selected_smart_preset)
         toolbar.addWidget(remove_preset_btn)
@@ -199,6 +223,8 @@ class PhotosTab(QWidget):
         toolbar.addWidget(self.undo_history_combo)
 
         undo_apply_btn = QPushButton("Undo")
+        undo_apply_btn.setIcon(_icon('undo'))
+        undo_apply_btn.setIconSize(QSize(16, 16))
         undo_apply_btn.setToolTip("Restore selected undo snapshot")
         undo_apply_btn.clicked.connect(self.undo_selected_batch)
         toolbar.addWidget(undo_apply_btn)
@@ -206,6 +232,8 @@ class PhotosTab(QWidget):
         toolbar.addStretch()
 
         self.thumb_btn = QPushButton(f"Thumbnails: {self.current_thumb_size.title()}")
+        self.thumb_btn.setIcon(_icon('thumbnail_grid'))
+        self.thumb_btn.setIconSize(QSize(16, 16))
         self.thumb_btn.clicked.connect(self.toggle_thumbnail_size)
         toolbar.addWidget(self.thumb_btn)
 
@@ -223,19 +251,14 @@ class PhotosTab(QWidget):
             "",
             "ID",
             "Thumbnail",
-            "Type",
-            "Pose",
-            "Facing",
-            "Level",
-            "Color",
-            "Material",
-            "Clothing",
-            "Footwear",
+            "Scene",
+            "Mood",
+            "Subjects",
             "Location",
+            "Objects",
             "Status",
             "IG",
             "TikTok",
-            "Fansly",
             "Package",
             "Tags",
             "Date Created",
@@ -259,16 +282,22 @@ class PhotosTab(QWidget):
         bottom_toolbar = QHBoxLayout()
 
         select_all_btn = QPushButton("Select All")
+        select_all_btn.setIcon(_icon('select_all'))
+        select_all_btn.setIconSize(QSize(16, 16))
         select_all_btn.clicked.connect(self.select_all_photos)
         bottom_toolbar.addWidget(select_all_btn)
 
         deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn.setIcon(_icon('deselect_all'))
+        deselect_all_btn.setIconSize(QSize(16, 16))
         deselect_all_btn.clicked.connect(self.deselect_all_photos)
         bottom_toolbar.addWidget(deselect_all_btn)
 
         bottom_toolbar.addStretch()
 
         bulk_edit_btn = QPushButton("Bulk Edit Cells")
+        bulk_edit_btn.setIcon(_icon('bulk_edit'))
+        bulk_edit_btn.setIconSize(QSize(16, 16))
         bulk_edit_btn.clicked.connect(self.bulk_edit_cells)
         bottom_toolbar.addWidget(bulk_edit_btn)
 
@@ -279,6 +308,8 @@ class PhotosTab(QWidget):
         bottom_toolbar.addWidget(self.status_dropdown)
 
         apply_status_btn = QPushButton("Apply Status")
+        apply_status_btn.setIcon(_icon('check'))
+        apply_status_btn.setIconSize(QSize(16, 16))
         apply_status_btn.clicked.connect(self.apply_status_to_selected)
         bottom_toolbar.addWidget(apply_status_btn)
 
@@ -287,43 +318,36 @@ class PhotosTab(QWidget):
         # Staged controls
         bottom_toolbar.addWidget(QLabel("Toggle Staged:"))
         staged_ig = QPushButton()
-        staged_ig.setIcon(self.controller.get_icon("instagram.png", "IG"))
-        staged_ig.setIconSize(self.controller.icon_size)
+        staged_ig.setIcon(_icon('instagram'))
+        staged_ig.setIconSize(QSize(18, 18))
         staged_ig.setToolTip("Stage to Instagram")
         staged_ig.clicked.connect(lambda: self.controller.toggle_staged("instagram"))
         bottom_toolbar.addWidget(staged_ig)
 
         staged_tiktok = QPushButton()
-        staged_tiktok.setIcon(self.controller.get_icon("tiktok.png", "TT"))
-        staged_tiktok.setIconSize(self.controller.icon_size)
+        staged_tiktok.setIcon(_icon('tiktok'))
+        staged_tiktok.setIconSize(QSize(18, 18))
         staged_tiktok.setToolTip("Stage to TikTok")
         staged_tiktok.clicked.connect(lambda: self.controller.toggle_staged("tiktok"))
         bottom_toolbar.addWidget(staged_tiktok)
 
-        staged_fansly = QPushButton()
-        staged_fansly.setIcon(self.controller.get_icon("fansly.png", "F"))
-        staged_fansly.setIconSize(self.controller.icon_size)
-        staged_fansly.setToolTip("Stage to Fansly")
-        staged_fansly.clicked.connect(lambda: self.controller.toggle_staged("fansly"))
-        bottom_toolbar.addWidget(staged_fansly)
-
         unstage_btn = QPushButton()
-        unstage_btn.setIcon(self.controller.get_icon("unstage.png", "US"))
-        unstage_btn.setIconSize(self.controller.icon_size)
+        unstage_btn.setIcon(_icon('unstage'))
+        unstage_btn.setIconSize(QSize(18, 18))
         unstage_btn.setToolTip("Unstage: move selected photos back to root/<package>")
         unstage_btn.clicked.connect(self.controller.unstage_selected)
         bottom_toolbar.addWidget(unstage_btn)
 
         package_btn = QPushButton()
-        package_btn.setIcon(self.controller.get_icon("package.png", "PK"))
-        package_btn.setIconSize(self.controller.icon_size)
+        package_btn.setIcon(_icon('package'))
+        package_btn.setIconSize(QSize(18, 18))
         package_btn.setToolTip("Manage packages for selected photos")
         package_btn.clicked.connect(self.controller.manage_packages_dialog)
         bottom_toolbar.addWidget(package_btn)
 
         unpackage_btn = QPushButton()
-        unpackage_btn.setIcon(self.controller.get_icon("unpackage.png", "UP"))
-        unpackage_btn.setIconSize(self.controller.icon_size)
+        unpackage_btn.setIcon(_icon('unpackage'))
+        unpackage_btn.setIconSize(QSize(18, 18))
         unpackage_btn.setToolTip("Unpackage: clear package and move files to root")
         unpackage_btn.clicked.connect(self.controller.unpackage_selected)
         bottom_toolbar.addWidget(unpackage_btn)
@@ -332,25 +356,18 @@ class PhotosTab(QWidget):
         bottom_toolbar.addWidget(QLabel("Toggle Release:"))
 
         toggle_ig = QPushButton()
-        toggle_ig.setIcon(self.controller.get_icon("instagram.png", "IG"))
-        toggle_ig.setIconSize(self.controller.icon_size)
+        toggle_ig.setIcon(_icon('instagram'))
+        toggle_ig.setIconSize(QSize(18, 18))
         toggle_ig.setToolTip("Release: Instagram")
         toggle_ig.clicked.connect(lambda: self.controller.toggle_release_status("released_instagram"))
         bottom_toolbar.addWidget(toggle_ig)
 
         toggle_tiktok = QPushButton()
-        toggle_tiktok.setIcon(self.controller.get_icon("tiktok.png", "TT"))
-        toggle_tiktok.setIconSize(self.controller.icon_size)
+        toggle_tiktok.setIcon(_icon('tiktok'))
+        toggle_tiktok.setIconSize(QSize(18, 18))
         toggle_tiktok.setToolTip("Release: TikTok")
         toggle_tiktok.clicked.connect(lambda: self.controller.toggle_release_status("released_tiktok"))
         bottom_toolbar.addWidget(toggle_tiktok)
-
-        toggle_fansly = QPushButton()
-        toggle_fansly.setIcon(self.controller.get_icon("fansly.png", "F"))
-        toggle_fansly.setIconSize(self.controller.icon_size)
-        toggle_fansly.setToolTip("Release: Fansly")
-        toggle_fansly.clicked.connect(lambda: self.controller.toggle_release_status("released_fansly"))
-        bottom_toolbar.addWidget(toggle_fansly)
 
         layout.addLayout(bottom_toolbar)
 
@@ -397,30 +414,23 @@ class PhotosTab(QWidget):
                 thumb_label.setText("[Missing]")
             self.photo_table.setCellWidget(i, self.COL_THUMBNAIL, thumb_label)
 
-            # Metadata columns
-            self.photo_table.setItem(i, self.COL_TYPE, QTableWidgetItem(photo["type_of_shot"] or ""))
-            self.photo_table.setItem(i, self.COL_POSE, QTableWidgetItem(photo["pose"] or ""))
-            self.photo_table.setItem(i, self.COL_FACING, QTableWidgetItem(photo["facing_direction"] or ""))
-            self.photo_table.setItem(i, self.COL_LEVEL, QTableWidgetItem(photo["explicit_level"] or ""))
-            self.photo_table.setItem(i, self.COL_COLOR, QTableWidgetItem(photo["color_of_clothing"] or ""))
-            self.photo_table.setItem(i, self.COL_MATERIAL, QTableWidgetItem(photo["material"] or ""))
-            self.photo_table.setItem(i, self.COL_CLOTHING, QTableWidgetItem(photo["type_clothing"] or ""))
-            self.photo_table.setItem(i, self.COL_FOOTWEAR, QTableWidgetItem(photo["footwear"] or ""))
-            self.photo_table.setItem(i, self.COL_LOCATION, QTableWidgetItem(photo["location"] or ""))
+            # AI metadata columns
+            self.photo_table.setItem(i, self.COL_SCENE, QTableWidgetItem(photo.get("scene_type") or ""))
+            self.photo_table.setItem(i, self.COL_MOOD, QTableWidgetItem(photo.get("mood") or ""))
+            self.photo_table.setItem(i, self.COL_SUBJECTS, QTableWidgetItem(photo.get("subjects") or ""))
+            self.photo_table.setItem(i, self.COL_LOCATION, QTableWidgetItem(photo.get("location") or ""))
+            self.photo_table.setItem(i, self.COL_OBJECTS, QTableWidgetItem(photo.get("objects_detected") or ""))
 
             # Status
             status_text = photo["status"] or "raw"
             self.photo_table.setItem(i, self.COL_STATUS, QTableWidgetItem(status_text))
 
             # Platform toggles
-            ig_item = QTableWidgetItem("✓" if photo["released_instagram"] else "")
+            ig_item = QTableWidgetItem("✓" if photo.get("released_instagram") else "")
             self.photo_table.setItem(i, self.COL_IG, ig_item)
 
-            tt_item = QTableWidgetItem("✓" if photo["released_tiktok"] else "")
+            tt_item = QTableWidgetItem("✓" if photo.get("released_tiktok") else "")
             self.photo_table.setItem(i, self.COL_TIKTOK, tt_item)
-
-            fansly_item = QTableWidgetItem("✓" if photo["released_fansly"] else "")
-            self.photo_table.setItem(i, self.COL_FANSLY, fansly_item)
 
             packages = self.controller.db.get_packages(photo["id"])
             package_display = ", ".join(packages) if packages else (photo.get("package_name") or "")
@@ -453,15 +463,11 @@ class PhotosTab(QWidget):
             return
 
         field_map = {
-            self.COL_TYPE: "type_of_shot",
-            self.COL_POSE: "pose",
-            self.COL_FACING: "facing_direction",
-            self.COL_LEVEL: "explicit_level",
-            self.COL_COLOR: "color_of_clothing",
-            self.COL_MATERIAL: "material",
-            self.COL_CLOTHING: "type_clothing",
-            self.COL_FOOTWEAR: "footwear",
+            self.COL_SCENE: "scene_type",
+            self.COL_MOOD: "mood",
+            self.COL_SUBJECTS: "subjects",
             self.COL_LOCATION: "location",
+            self.COL_OBJECTS: "objects_detected",
             self.COL_STATUS: "status",
             self.COL_PACKAGE: "package_name",
             self.COL_TAGS: "tags",

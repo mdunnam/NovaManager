@@ -1,9 +1,8 @@
 """
-Core modules for Nova Photo Manager.
+Core modules for PhotoFlow.
 
 This package contains the core business logic:
 - database: SQLite database management
-- ai_analyzer: AI-powered image analysis using Ollama
-- face_matcher_v2: OpenCV-based face matching
-- face_matcher_deepface: DeepFace-based face matching
+- ai_analyzer: AI-powered general image analysis using Ollama/LLaVA
+- image_retoucher: OpenCV-based blemish removal
 """

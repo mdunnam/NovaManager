@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe nova_manager.py)",
+      "Bash(wc -l g:/APPS/NovaManager/NovaManager/**/*.py)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(QT_QPA_PLATFORM=offscreen python tests/test_components.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen python -c \":*)",
+      "Bash(QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 python tests/test_startup.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8 python -c \":*)",
+      "Bash(start python:*)",
+      "Bash(where ollama:*)",
+      "Bash(ollama list:*)",
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''Ollama running, models:'''', [m[''''name''''] for m in d.get\\(''''models'''',[]\\)]\\)\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/python.exe tests/test_components.py)"
+    ]
+  }
+}
