@@ -5,7 +5,7 @@ Manages social media API credentials (stored encrypted via the DB).
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QGroupBox, QFormLayout, QMessageBox, QScrollArea,
-    QTabWidget, QCheckBox,
+    QTabWidget, QCheckBox, QSpinBox,
 )
 from PyQt6.QtCore import Qt, QSize
 from core.icons import icon as _icon
@@ -222,6 +222,13 @@ class SettingsTab(QWidget):
         self.watch_subfolders_cb.setChecked(True)
         fw_form.addRow('', self.watch_subfolders_cb)
 
+        self.watcher_interval_spin = QSpinBox()
+        self.watcher_interval_spin.setRange(5, 3600)
+        self.watcher_interval_spin.setValue(30)
+        self.watcher_interval_spin.setSuffix(' s')
+        self.watcher_interval_spin.setToolTip('How often the watcher scans for new files (seconds)')
+        fw_form.addRow('Scan interval:', self.watcher_interval_spin)
+
         layout.addWidget(fw_group)
 
         fw_btn_row = QHBoxLayout()
@@ -372,7 +379,7 @@ class SettingsTab(QWidget):
             watcher = FolderWatcher(
                 folder=folder,
                 db=controller.db,
-                interval_secs=15,
+                interval_secs=self.watcher_interval_spin.value(),
                 include_subfolders=self.watch_subfolders_cb.isChecked(),
             )
             watcher.new_photo_found.connect(self._on_new_photo)

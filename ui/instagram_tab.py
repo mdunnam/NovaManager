@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFrame,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
+from core.icons import icon as _icon
 
 
 class InstagramTab(QWidget):
@@ -46,6 +47,8 @@ class InstagramTab(QWidget):
         auth_layout.addWidget(self.status_label)
         auth_layout.addStretch()
         settings_btn = QPushButton('Manage Credentials')
+        settings_btn.setIcon(_icon('settings'))
+        settings_btn.setIconSize(QSize(16, 16))
         settings_btn.clicked.connect(self._open_settings)
         auth_layout.addWidget(settings_btn)
         layout.addWidget(auth_group)
@@ -65,7 +68,9 @@ class InstagramTab(QWidget):
         info.setStyleSheet('color: #ccc; font-size: 11px;')
         bl.addWidget(info)
 
-        open_btn = QPushButton('Open Composer →')
+        open_btn = QPushButton('Open Composer \u2192')
+        open_btn.setIcon(_icon('arrow_right', 16, '#ffffff'))
+        open_btn.setIconSize(QSize(16, 16))
         open_btn.setStyleSheet(
             'background: #c13584; color: white; font-weight: bold; '
             'padding: 6px 18px; border-radius: 4px;'

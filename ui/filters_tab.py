@@ -34,11 +34,11 @@ class FiltersTab(QWidget):
 
         # --- Status filters ---
         scroll_layout.addWidget(QLabel("<b>Status:</b>"))
-        self.filter_raw = QCheckBox("Unreviewed (Raw)")
+        self.filter_raw = QCheckBox("Unreviewed")
         scroll_layout.addWidget(self.filter_raw)
-        self.filter_needs_edit = QCheckBox("Needs Edit")
+        self.filter_needs_edit = QCheckBox("Editing")
         scroll_layout.addWidget(self.filter_needs_edit)
-        self.filter_ready = QCheckBox("Ready to Publish")
+        self.filter_ready = QCheckBox("Ready")
         scroll_layout.addWidget(self.filter_ready)
         self.filter_released = QCheckBox("Published")
         scroll_layout.addWidget(self.filter_released)

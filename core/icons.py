@@ -543,6 +543,49 @@ _ICONS: dict[str, str] = {
         '<polyline points="10 6 10 10 13 13"/>'
         '<path d="M3 10H5" stroke-dasharray="2 2"/>'
     ),
+
+    # ── Missing / alias icons ─────────────────────────────────────────────
+    "pen_draw": (
+        '<path d="M15 3l2 2-10 10-3 1 1-3 10-10z"/>'
+        '<line x1="2" y1="18" x2="6" y2="18"/>'
+    ),
+    "cursor_select": (
+        '<path d="M4 4l5 12 2.5-4.5 4.5-2.5L4 4z"/>'
+        '<line x1="11.5" y1="11.5" x2="17" y2="17"/>'
+    ),
+    "shape_circle": (
+        '<circle cx="10" cy="10" r="7"/>'
+    ),
+    "text_tool": (
+        '<line x1="4" y1="5" x2="16" y2="5"/>'
+        '<line x1="10" y1="5" x2="10" y2="17"/>'
+        '<line x1="7" y1="17" x2="13" y2="17"/>'
+    ),
+    "compare_split": (
+        '<line x1="10" y1="2" x2="10" y2="18" stroke-dasharray="3 2"/>'
+        '<rect x="2" y="4" width="6" height="12" rx="1"/>'
+        '<rect x="12" y="4" width="6" height="12" rx="1"/>'
+    ),
+    "arrow_left": (
+        '<line x1="17" y1="10" x2="3" y2="10"/>'
+        '<polyline points="8 5 3 10 8 15"/>'
+    ),
+    "arrow_up": (
+        '<line x1="10" y1="17" x2="10" y2="3"/>'
+        '<polyline points="5 8 10 3 15 8"/>'
+    ),
+    "arrow_down": (
+        '<line x1="10" y1="3" x2="10" y2="17"/>'
+        '<polyline points="5 12 10 17 15 12"/>'
+    ),
+    "lock": (
+        '<rect x="4" y="9" width="12" height="9" rx="1"/>'
+        '<path d="M7 9V6.5a3 3 0 1 1 6 0V9"/>'
+    ),
+    "flag": (
+        '<path d="M4 2v16"/>'
+        '<path d="M4 4h10l-2 4 2 4H4"/>'
+    ),
 }
 
 

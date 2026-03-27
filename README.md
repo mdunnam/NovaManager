@@ -1,24 +1,29 @@
-# Nova Photo Manager
+# PhotoFlow
 
-A desktop application for managing and organizing Nova's photo collection with AI-powered analysis.
+A general-purpose photo organizer and multi-platform social publisher — built with Python, PyQt6, and local AI (LLaVA/Ollama).
 
 ## Features
 
-- **AI-Powered Analysis**: Automatically analyzes photos using LLaVA vision model
-- **Metadata Management**: Track shot type, pose, clothing, location, and more
-- **Workflow Status**: Mark photos as needing editing, ready, or released to various platforms
-- **Batch Operations**: Update multiple photos at once
-- **Package Management**: Organize photos into named packages
-- **Filtering**: Easily filter photos by status or attributes
+- **AI-Powered Analysis**: Automatically analyzes photos using LLaVA vision model — scene type, mood, subjects, colors, objects, captions, and hashtags
+- **EXIF Extraction**: Camera, lens, ISO, aperture, shutter speed, focal length, GPS coordinates, and date taken
+- **Duplicate Detection**: Exact (MD5) and near-duplicate (perceptual hash) detection with side-by-side review
+- **Quality Scoring**: Blur and exposure assessment for every photo
+- **Albums & Collections**: Manual albums and smart/date-based albums with cover photo support
+- **Workflow Status**: Track photos as Unreviewed → Editing → Ready → Published
+- **Multi-Platform Publishing**: Schedule and post to Instagram, TikTok, Twitter, Facebook, Pinterest, Threads
+- **Batch Operations**: Update metadata, status, and packages for multiple photos at once
+- **Folder Watcher**: Automatically detects and imports new photos added to your folder
+- **Filtering**: Filter photos by status, scene, mood, subjects, quality, EXIF, GPS, content rating, and more
+- **Image Retoucher**: Blemish removal with annotated canvas, layers, undo history, and project save/load
 
 ## Installation
 
 1. Install Python dependencies:
 ```bash
-pip install PyQt6 Pillow ollama
+pip install -r requirements.txt
 ```
 
-2. Install Ollama and pull the LLaVA model:
+2. Install Ollama and pull the LLaVA model (optional — required for AI analysis):
 ```bash
 ollama pull llava
 ```
@@ -32,45 +37,44 @@ python nova_manager.py
 
 1. **Select Root Folder**: Choose the folder containing your images
 2. **Include Subfolders**: Check this option to scan subdirectories
-3. **Analyze Images**: Click "Analyze Images" to process all photos
-4. **View Results**: Browse analyzed photos in the table
-5. **Batch Update**: Select multiple photos and apply status updates
-6. **Filter**: Use the Filters tab to view specific subsets of photos
+3. **Analyze Images**: Click "Analyze Images" to run AI analysis on all photos
+4. **Browse & Filter**: Use Gallery, Library, and Filters tabs to explore your photos
+5. **Albums**: Organize photos into manual or smart (date-based) albums
+6. **Publish**: Schedule and post to social platforms via the Publish, Instagram, and TikTok tabs
 
 ## Database
 
-The application stores all metadata in a SQLite database at:
-`data/nova_photos.db` (auto-created on first run)
+All metadata is stored in a SQLite database at `data/photos.db` (auto-created on first run).
 
 ## Project Structure
 
 ```
-NovaApp/
+PhotoFlow/
 ├── nova_manager.py          # Main application entry point
 ├── core/                    # Core business logic
-│   ├── database.py         # SQLite database management
-│   ├── ai_analyzer.py      # AI-powered image analysis
-│   ├── face_matcher_v2.py  # OpenCV face matching
-│   └── face_matcher_deepface.py  # DeepFace face matching
-├── ui/                      # PyQt6 UI components
-├── data/                    # Runtime data (database)
-├── models/                  # AI model files
+│   ├── database.py          # SQLite database management
+│   ├── ai_analyzer.py       # AI photo analysis (LLaVA/Ollama)
+│   ├── exif_extractor.py    # EXIF metadata extraction
+│   ├── duplicate_detector.py# MD5 + perceptual hash deduplication
+│   ├── quality_scorer.py    # Blur + exposure scoring
+│   ├── folder_watcher.py    # Auto-import new files
+│   └── image_retoucher.py   # Inpainting / blemish removal
+├── ui/                      # PyQt6 tab widgets
+├── data/                    # Runtime data (database, logs)
 ├── scripts/                 # Utility scripts
 ├── tests/                   # Test files
 ├── docs/                    # Documentation
-└── themes/                  # UI themes
+└── themes/                  # QSS stylesheets
 ```
 
 ## Fields Tracked
 
-- Shot type (selfie, portrait, fullbody, closeup)
-- Pose (standing, sitting, lying, kneeling, leaning)
-- Facing direction (atcamera, away, up, down, left, right, side, back)
-- Explicit level (sfw, mild, suggestive, explicit)
-- Clothing color, material, and type
-- Footwear
-- Interior/Exterior
-- Location
-- Workflow status (needs editing, ready, released to platforms)
-- Package name
+- Scene type, composition, subjects, dominant colors, detected objects
+- Mood, location, content rating
+- AI-generated caption and suggested hashtags
+- EXIF: camera, lens, focal length, ISO, aperture, shutter speed, GPS, date taken
+- Workflow status: Unreviewed → Editing → Ready → Published
+- Platform release status (Instagram, TikTok, and more)
+- Quality score (blur, exposure), perceptual hash for deduplication
+- Tags, notes, package name, albums
 - Dates

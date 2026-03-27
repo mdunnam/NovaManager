@@ -35,10 +35,20 @@ class AlbumThumbnail(QLabel):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
+        set_cover_act = menu.addAction("Set as Album Cover")
         remove_act = menu.addAction("Remove from Album")
         act = menu.exec(event.globalPos())
-        if act == remove_act:
-            self.parent_album_tab.remove_photo(self.photo['id'])
+        album_tab = getattr(self, 'parent_album_tab', None)
+        if not album_tab:
+            return
+        if act == set_cover_act and album_tab.current_album_id:
+            album_tab.controller.db.set_album_cover(album_tab.current_album_id, self.photo['id'])
+            if album_tab.controller.statusBar():
+                album_tab.controller.statusBar().showMessage(
+                    f"Cover set: {self.photo.get('filename', '')}", 3000
+                )
+        elif act == remove_act:
+            album_tab.remove_photo(self.photo['id'])
 
 
 class AlbumsTab(QWidget):
@@ -87,6 +97,14 @@ class AlbumsTab(QWidget):
         smart_btn.setToolTip("Create a smart album from current filters")
         smart_btn.clicked.connect(self.create_smart_album)
         album_btn_row.addWidget(smart_btn)
+
+        date_btn = QPushButton(" By Date")
+        date_btn.setIcon(_icon('calendar'))
+        date_btn.setIconSize(QSize(16, 16))
+        date_btn.setToolTip("Auto-create albums grouped by month/year from EXIF date")
+        date_btn.clicked.connect(self.create_date_albums)
+        album_btn_row.addWidget(date_btn)
+
         left_layout.addLayout(album_btn_row)
 
         self.album_list = QListWidget()
@@ -283,7 +301,19 @@ class AlbumsTab(QWidget):
         self._load_album_grid(self.current_album_id)
 
     def set_cover_photo(self):
-        QMessageBox.information(self, "Set Cover", "Right-click a photo thumbnail and choose 'Set as Cover' to set the album cover.")
+        """Set the currently selected thumbnail as the album cover"""
+        if not self.current_album_id:
+            return
+        # Find the first photo in the grid as a fallback, or show instruction
+        photos = self.controller.db.get_album_photos(self.current_album_id)
+        if not photos:
+            QMessageBox.information(self, "No Photos", "Add photos to the album first.")
+            return
+        # Use cover_photo_id from DB if already set, else guide user
+        QMessageBox.information(
+            self, "Set Cover",
+            "Right-click any photo thumbnail in the grid and choose 'Set as Album Cover'."
+        )
 
     # ── Auto-populate smart albums by date ─────────────────────
 

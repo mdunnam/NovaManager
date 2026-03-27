@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QListWidgetItem, QColorDialog)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QSize, QEvent, QTimer, QRect, QPointF
 from PyQt6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont, QImage, QPen, QShortcut, QKeySequence, QPolygonF, QFontMetrics, QTabletEvent
+from core.icons import icon as _icon
 from pathlib import Path
 import os
 import hashlib
@@ -54,6 +55,8 @@ from ui.settings_tab import SettingsTab
 from ui.duplicates_tab import DuplicatesTab
 from ui.batch_tab import BatchTab
 from ui.history_tab import HistoryTab
+from ui.learning_tab import AILearningTab
+from ui.vocabularies_tab import VocabulariesTab
 
 from core.database import PhotoDatabase
 from core.ai_analyzer import analyze_image
@@ -94,8 +97,12 @@ class PhotoPickerDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.addStretch()
         select_btn = QPushButton("Select")
+        select_btn.setIcon(_icon('check'))
+        select_btn.setIconSize(QSize(16, 16))
         select_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setIcon(_icon('close'))
+        cancel_btn.setIconSize(QSize(16, 16))
         cancel_btn.clicked.connect(self.reject)
         button_row.addWidget(select_btn)
         button_row.addWidget(cancel_btn)
@@ -231,6 +238,8 @@ class PackageManagerDialog(QDialog):
         self.input = QLineEdit()
         self.input.setPlaceholderText("Type a package and press Add (comma to add multiple)")
         add_btn = QPushButton("Add")
+        add_btn.setIcon(_icon('preset_add'))
+        add_btn.setIconSize(QSize(16, 16))
         add_btn.clicked.connect(self.on_add_clicked)
         add_row.addWidget(self.input)
         add_row.addWidget(add_btn)
@@ -2158,15 +2167,23 @@ class ImageLightboxDialog(QDialog):
         nav_group = QGroupBox("View")
         nav_layout = QHBoxLayout(nav_group)
         zoom_out_btn = QPushButton("-")
+        zoom_out_btn.setIcon(_icon('zoom_out'))
+        zoom_out_btn.setIconSize(QSize(14, 14))
         zoom_out_btn.clicked.connect(lambda: self.image_canvas.adjust_zoom(0.9))
         nav_layout.addWidget(zoom_out_btn)
         zoom_in_btn = QPushButton("+")
+        zoom_in_btn.setIcon(_icon('zoom_in'))
+        zoom_in_btn.setIconSize(QSize(14, 14))
         zoom_in_btn.clicked.connect(lambda: self.image_canvas.adjust_zoom(1.1))
         nav_layout.addWidget(zoom_in_btn)
         fit_btn = QPushButton("Fit")
+        fit_btn.setIcon(_icon('expand'))
+        fit_btn.setIconSize(QSize(14, 14))
         fit_btn.clicked.connect(self.image_canvas.fit_to_view)
         nav_layout.addWidget(fit_btn)
         reset_btn = QPushButton("100%")
+        reset_btn.setIcon(_icon('thumbnail_grid'))
+        reset_btn.setIconSize(QSize(14, 14))
         reset_btn.clicked.connect(lambda: self.image_canvas.set_zoom(1.0))
         nav_layout.addWidget(reset_btn)
         self.zoom_label = QLabel("100%")
@@ -2179,14 +2196,20 @@ class ImageLightboxDialog(QDialog):
         tool_layout.addWidget(QLabel("Brush Tools"))
         row1 = QHBoxLayout()
         self.blemish_brush_btn = QPushButton("Blemish")
+        self.blemish_brush_btn.setIcon(_icon('batch_retouch'))
+        self.blemish_brush_btn.setIconSize(QSize(14, 14))
         self.blemish_brush_btn.setCheckable(True)
         self.blemish_brush_btn.toggled.connect(lambda checked, b=self.blemish_brush_btn: self._set_shape_tool("blemish_brush", checked, b))
         row1.addWidget(self.blemish_brush_btn)
         self.blur_brush_btn = QPushButton("Blur")
+        self.blur_brush_btn.setIcon(_icon('subtle'))
+        self.blur_brush_btn.setIconSize(QSize(14, 14))
         self.blur_brush_btn.setCheckable(True)
         self.blur_brush_btn.toggled.connect(lambda checked, b=self.blur_brush_btn: self._set_shape_tool("blur_brush", checked, b))
         row1.addWidget(self.blur_brush_btn)
         self.clone_stamp_btn = QPushButton("Clone")
+        self.clone_stamp_btn.setIcon(_icon('copy'))
+        self.clone_stamp_btn.setIconSize(QSize(14, 14))
         self.clone_stamp_btn.setCheckable(True)
         self.clone_stamp_btn.toggled.connect(lambda checked, b=self.clone_stamp_btn: self._set_shape_tool("clone_stamp", checked, b))
         row1.addWidget(self.clone_stamp_btn)
@@ -2273,14 +2296,20 @@ class ImageLightboxDialog(QDialog):
         tool_layout.addWidget(QLabel("Markup Tools"))
         row2 = QHBoxLayout()
         self.draw_toggle = QPushButton("Draw")
+        self.draw_toggle.setIcon(_icon('pen_draw'))
+        self.draw_toggle.setIconSize(QSize(14, 14))
         self.draw_toggle.setCheckable(True)
         self.draw_toggle.toggled.connect(self._on_draw_toggled)
         row2.addWidget(self.draw_toggle)
         self.select_toggle = QPushButton("Select")
+        self.select_toggle.setIcon(_icon('cursor_select'))
+        self.select_toggle.setIconSize(QSize(14, 14))
         self.select_toggle.setCheckable(True)
         self.select_toggle.toggled.connect(self._on_select_toggled)
         row2.addWidget(self.select_toggle)
         self.eraser_toggle = QPushButton("Eraser")
+        self.eraser_toggle.setIcon(_icon('eraser'))
+        self.eraser_toggle.setIconSize(QSize(14, 14))
         self.eraser_toggle.setCheckable(True)
         self.eraser_toggle.toggled.connect(lambda checked: self._set_tool_mode("eraser" if checked else "pen"))
         row2.addWidget(self.eraser_toggle)
@@ -2288,14 +2317,20 @@ class ImageLightboxDialog(QDialog):
 
         row3 = QHBoxLayout()
         self.circle_btn = QPushButton("Circle")
+        self.circle_btn.setIcon(_icon('shape_circle'))
+        self.circle_btn.setIconSize(QSize(14, 14))
         self.circle_btn.setCheckable(True)
         self.circle_btn.toggled.connect(lambda checked, b=self.circle_btn: self._set_shape_tool("circle", checked, b))
         row3.addWidget(self.circle_btn)
         self.arrow_btn = QPushButton("Arrow")
+        self.arrow_btn.setIcon(_icon('arrow_right'))
+        self.arrow_btn.setIconSize(QSize(14, 14))
         self.arrow_btn.setCheckable(True)
         self.arrow_btn.toggled.connect(lambda checked, b=self.arrow_btn: self._set_shape_tool("arrow", checked, b))
         row3.addWidget(self.arrow_btn)
         self.text_btn = QPushButton("Text")
+        self.text_btn.setIcon(_icon('text_tool'))
+        self.text_btn.setIconSize(QSize(14, 14))
         self.text_btn.setCheckable(True)
         self.text_btn.toggled.connect(lambda checked, b=self.text_btn: self._set_shape_tool("text", checked, b))
         row3.addWidget(self.text_btn)
@@ -2303,6 +2338,8 @@ class ImageLightboxDialog(QDialog):
 
         row3b = QHBoxLayout()
         color_btn = QPushButton("Color")
+        color_btn.setIcon(_icon('color_picker'))
+        color_btn.setIconSize(QSize(14, 14))
         color_btn.clicked.connect(self._pick_markup_color)
         row3b.addWidget(color_btn)
         self.markup_color_preview = QLabel()
@@ -2314,14 +2351,20 @@ class ImageLightboxDialog(QDialog):
 
         row4 = QHBoxLayout()
         clear_btn = QPushButton("Clear Marks")
+        clear_btn.setIcon(_icon('close'))
+        clear_btn.setIconSize(QSize(14, 14))
         clear_btn.clicked.connect(self.image_canvas.clear_annotations)
         row4.addWidget(clear_btn)
         undo_btn = QPushButton("Undo")
+        undo_btn.setIcon(_icon('undo'))
+        undo_btn.setIconSize(QSize(14, 14))
         undo_btn.clicked.connect(self.image_canvas.undo_last)
         row4.addWidget(undo_btn)
         tool_layout.addLayout(row4)
 
         self.show_marks_toggle = QPushButton("Show Marks")
+        self.show_marks_toggle.setIcon(_icon('eye'))
+        self.show_marks_toggle.setIconSize(QSize(14, 14))
         self.show_marks_toggle.setCheckable(True)
         self.show_marks_toggle.setChecked(True)
         self.show_marks_toggle.toggled.connect(self.image_canvas.set_show_annotations)
@@ -2332,9 +2375,13 @@ class ImageLightboxDialog(QDialog):
         retouch_layout = QVBoxLayout(retouch_group)
         row5 = QHBoxLayout()
         ai_retouch_btn = QPushButton("Apply AI Retouch")
+        ai_retouch_btn.setIcon(_icon('sparkle'))
+        ai_retouch_btn.setIconSize(QSize(14, 14))
         ai_retouch_btn.clicked.connect(self.apply_ai_retouch)
         row5.addWidget(ai_retouch_btn)
         self.undo_retouch_btn = QPushButton("Undo Retouch")
+        self.undo_retouch_btn.setIcon(_icon('undo'))
+        self.undo_retouch_btn.setIconSize(QSize(14, 14))
         self.undo_retouch_btn.setEnabled(False)
         self.undo_retouch_btn.clicked.connect(self.undo_retouch)
         row5.addWidget(self.undo_retouch_btn)
@@ -2363,21 +2410,31 @@ class ImageLightboxDialog(QDialog):
 
         row7 = QHBoxLayout()
         self.preset_subtle_btn = QPushButton("Subtle")
+        self.preset_subtle_btn.setIcon(_icon('subtle'))
+        self.preset_subtle_btn.setIconSize(QSize(14, 14))
         self.preset_subtle_btn.clicked.connect(lambda: self._apply_retouch_preset("subtle"))
         row7.addWidget(self.preset_subtle_btn)
         self.preset_balanced_btn = QPushButton("Balanced")
+        self.preset_balanced_btn.setIcon(_icon('balanced'))
+        self.preset_balanced_btn.setIconSize(QSize(14, 14))
         self.preset_balanced_btn.clicked.connect(lambda: self._apply_retouch_preset("balanced"))
         row7.addWidget(self.preset_balanced_btn)
         self.preset_strong_btn = QPushButton("Strong")
+        self.preset_strong_btn.setIcon(_icon('strong'))
+        self.preset_strong_btn.setIconSize(QSize(14, 14))
         self.preset_strong_btn.clicked.connect(lambda: self._apply_retouch_preset("strong"))
         row7.addWidget(self.preset_strong_btn)
         retouch_layout.addLayout(row7)
 
         row8 = QHBoxLayout()
         sync_batch_btn = QPushButton("Sync To Batch")
+        sync_batch_btn.setIcon(_icon('broadcast'))
+        sync_batch_btn.setIconSize(QSize(14, 14))
         sync_batch_btn.clicked.connect(self._sync_settings_to_batch)
         row8.addWidget(sync_batch_btn)
         self.save_image_btn = QPushButton("Save Image")
+        self.save_image_btn.setIcon(_icon('save'))
+        self.save_image_btn.setIconSize(QSize(14, 14))
         self.save_image_btn.setEnabled(False)
         self.save_image_btn.clicked.connect(self.save_current_image)
         row8.addWidget(self.save_image_btn)
@@ -2404,15 +2461,21 @@ class ImageLightboxDialog(QDialog):
 
         row9 = QHBoxLayout()
         self.compare_split_btn = QPushButton("Split")
+        self.compare_split_btn.setIcon(_icon('compare_split'))
+        self.compare_split_btn.setIconSize(QSize(14, 14))
         self.compare_split_btn.setCheckable(True)
         self.compare_split_btn.setChecked(True)
         self.compare_split_btn.clicked.connect(lambda: self._set_compare_mode_chip("Split"))
         row9.addWidget(self.compare_split_btn)
         self.compare_before_btn = QPushButton("Before")
+        self.compare_before_btn.setIcon(_icon('arrow_left'))
+        self.compare_before_btn.setIconSize(QSize(14, 14))
         self.compare_before_btn.setCheckable(True)
         self.compare_before_btn.clicked.connect(lambda: self._set_compare_mode_chip("Before"))
         row9.addWidget(self.compare_before_btn)
         self.compare_after_btn = QPushButton("After")
+        self.compare_after_btn.setIcon(_icon('arrow_right'))
+        self.compare_after_btn.setIconSize(QSize(14, 14))
         self.compare_after_btn.setCheckable(True)
         self.compare_after_btn.clicked.connect(lambda: self._set_compare_mode_chip("After"))
         row9.addWidget(self.compare_after_btn)
@@ -2420,9 +2483,13 @@ class ImageLightboxDialog(QDialog):
 
         row10 = QHBoxLayout()
         reset_divider_btn = QPushButton("Center Divider")
+        reset_divider_btn.setIcon(_icon('compare_split'))
+        reset_divider_btn.setIconSize(QSize(14, 14))
         reset_divider_btn.clicked.connect(lambda: self.image_canvas.set_compare_ratio(0.5))
         row10.addWidget(reset_divider_btn)
         compare_btn = QPushButton("Load Edited")
+        compare_btn.setIcon(_icon('image'))
+        compare_btn.setIconSize(QSize(14, 14))
         compare_btn.clicked.connect(self.load_compare_image)
         row10.addWidget(compare_btn)
         compare_layout.addLayout(row10)
@@ -2473,39 +2540,57 @@ class ImageLightboxDialog(QDialog):
 
         row14 = QHBoxLayout()
         layer_up_btn = QPushButton("Move Up")
+        layer_up_btn.setIcon(_icon('arrow_up'))
+        layer_up_btn.setIconSize(QSize(14, 14))
         layer_up_btn.clicked.connect(lambda: self._move_active_layer(-1))
         row14.addWidget(layer_up_btn)
         layer_down_btn = QPushButton("Move Down")
+        layer_down_btn.setIcon(_icon('arrow_down'))
+        layer_down_btn.setIconSize(QSize(14, 14))
         layer_down_btn.clicked.connect(lambda: self._move_active_layer(1))
         row14.addWidget(layer_down_btn)
         layer_layout.addLayout(row14)
 
         row14b = QHBoxLayout()
         add_layer_btn = QPushButton("Add")
+        add_layer_btn.setIcon(_icon('preset_add'))
+        add_layer_btn.setIconSize(QSize(14, 14))
         add_layer_btn.clicked.connect(self._add_layer)
         row14b.addWidget(add_layer_btn)
         dup_layer_btn = QPushButton("Duplicate")
+        dup_layer_btn.setIcon(_icon('copy'))
+        dup_layer_btn.setIconSize(QSize(14, 14))
         dup_layer_btn.clicked.connect(self._duplicate_layer)
         row14b.addWidget(dup_layer_btn)
         rename_layer_btn = QPushButton("Rename")
+        rename_layer_btn.setIcon(_icon('rename'))
+        rename_layer_btn.setIconSize(QSize(14, 14))
         rename_layer_btn.clicked.connect(self._rename_layer)
         row14b.addWidget(rename_layer_btn)
         del_layer_btn = QPushButton("Delete")
+        del_layer_btn.setIcon(_icon('trash'))
+        del_layer_btn.setIconSize(QSize(14, 14))
         del_layer_btn.clicked.connect(self._delete_layer)
         row14b.addWidget(del_layer_btn)
         layer_layout.addLayout(row14b)
 
         row14c = QHBoxLayout()
         self.layer_lock_btn = QPushButton("Lock Layer")
+        self.layer_lock_btn.setIcon(_icon('lock'))
+        self.layer_lock_btn.setIconSize(QSize(14, 14))
         self.layer_lock_btn.clicked.connect(self._toggle_layer_lock)
         row14c.addWidget(self.layer_lock_btn)
         layer_layout.addLayout(row14c)
 
         row14d = QHBoxLayout()
         save_project_btn = QPushButton("Save Project")
+        save_project_btn.setIcon(_icon('save'))
+        save_project_btn.setIconSize(QSize(14, 14))
         save_project_btn.clicked.connect(self._save_project)
         row14d.addWidget(save_project_btn)
         load_project_btn = QPushButton("Load Project")
+        load_project_btn.setIcon(_icon('image'))
+        load_project_btn.setIconSize(QSize(14, 14))
         load_project_btn.clicked.connect(self._load_project)
         row14d.addWidget(load_project_btn)
         row14d.addStretch()
@@ -2542,6 +2627,8 @@ class ImageLightboxDialog(QDialog):
         legend.setWordWrap(True)
         layer_layout.addWidget(legend)
         export_btn = QPushButton("Export Marked Copy")
+        export_btn.setIcon(_icon('export'))
+        export_btn.setIconSize(QSize(14, 14))
         export_btn.clicked.connect(self.export_marked_copy)
         layer_layout.addWidget(export_btn)
         editor_layout.addWidget(layer_group)
@@ -2604,10 +2691,14 @@ class ImageLightboxDialog(QDialog):
 
         notes_actions = QHBoxLayout()
         export_tasks_btn = QPushButton("Export Tasks")
+        export_tasks_btn.setIcon(_icon('export'))
+        export_tasks_btn.setIconSize(QSize(16, 16))
         export_tasks_btn.clicked.connect(self.export_task_list)
         notes_actions.addWidget(export_tasks_btn)
         notes_actions.addStretch()
         save_btn = QPushButton("Save Notes")
+        save_btn.setIcon(_icon('save'))
+        save_btn.setIconSize(QSize(16, 16))
         save_btn.clicked.connect(self.save_notes)
         notes_actions.addWidget(save_btn)
         notes_layout.addLayout(notes_actions)
@@ -3591,11 +3682,13 @@ class AnalyzerThread(QThread):
     def run(self):
         """Analyze all images in the folder"""
         db = PhotoDatabase(self.db_path)
-        
+
         try:
-            # Get all image files
-            image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
-            
+            # Get all image files (including raw, HEIC, WEBP for modern cameras)
+            image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp',
+                                '.webp', '.tiff', '.tif', '.heic', '.heif',
+                                '.raw', '.cr2', '.nef', '.arw')
+
             if self.include_subfolders:
                 files = []
                 for ext in image_extensions:
@@ -3606,7 +3699,17 @@ class AnalyzerThread(QThread):
                 for ext in image_extensions:
                     files.extend(Path(self.folder_path).glob(f'*{ext}'))
                     files.extend(Path(self.folder_path).glob(f'*{ext.upper()}'))
-            
+
+            # Deduplicate (case-insensitive) to avoid double-counting on case-insensitive FS
+            seen: set = set()
+            deduped = []
+            for f in files:
+                key = str(f).lower()
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(f)
+            files = deduped
+
             total = len(files)
             
             import time
@@ -3793,94 +3896,6 @@ class ReanalyzerThread(QThread):
     def stop(self):
         """Stop the reanalyzer thread"""
         self._is_running = False
-    
-    def run(self):
-        """Analyze all images in the folder"""
-        # Create a new database connection for this thread
-        db = PhotoDatabase(self.db_path)
-        
-        try:
-            # Get all image files
-            image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
-            
-            if self.include_subfolders:
-                files = []
-                for ext in image_extensions:
-                    files.extend(Path(self.folder_path).rglob(f'*{ext}'))
-                    files.extend(Path(self.folder_path).rglob(f'*{ext.upper()}'))
-            else:
-                files = []
-                for ext in image_extensions:
-                    files.extend(Path(self.folder_path).glob(f'*{ext}'))
-                    files.extend(Path(self.folder_path).glob(f'*{ext.upper()}'))
-            
-            total = len(files)
-            
-            import time
-            start_time = time.time()
-            
-            for i, filepath in enumerate(files):
-                if not self._is_running:
-                    break
-                
-                filepath = str(filepath)
-                filename = Path(filepath).name
-                
-                # Calculate ETA
-                if i > 0:
-                    elapsed = time.time() - start_time
-                    avg_time = elapsed / i
-                    remaining = (total - i) * avg_time
-                    eta_mins = int(remaining / 60)
-                    eta_secs = int(remaining % 60)
-                    status = f"{filename} (ETA: {eta_mins}m {eta_secs}s)"
-                else:
-                    status = filename
-                
-                self.progress.emit(i + 1, total, status)
-                
-                try:
-                    # Check if already analyzed
-                    existing = db.get_photo_by_path(filepath)
-                    if existing and existing.get('scene_type'):
-                        continue  # Skip already analyzed
-                    
-                    # Analyze image with AI (pass db for learning from corrections)
-                    metadata = analyze_image(filepath, db)
-                    
-                    # Add or update in database
-                    if existing:
-                        # Protect user corrections - don't overwrite manually corrected fields
-                        corrected_fields = db.get_corrected_fields_for_photo(existing['id'])
-                        if corrected_fields:
-                            for field in corrected_fields:
-                                if field in metadata:
-                                    print(f"    Preserving user correction for {field} on photo {existing['id']}")
-                                    del metadata[field]
-                        
-                        if metadata:  # Only update if there are fields to update
-                            db.update_photo_metadata(existing['id'], metadata)
-                        photo_id = existing['id']
-                    else:
-                        photo_id = db.add_photo(filepath, metadata)
-                    
-                    # Get complete photo data and emit
-                    photo_data = db.get_photo(photo_id)
-                    self.photo_analyzed.emit(photo_data)
-                
-                except Exception as e:
-                    self.error.emit(f"Error analyzing {filename}: {str(e)}")
-            
-            self.finished.emit()
-        
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            db.close()
-    
-    def stop(self):
-        """Stop the analyzer thread"""
-        self._is_running = False
 
 
 class MainWindow(QMainWindow):
@@ -4022,6 +4037,20 @@ class MainWindow(QMainWindow):
             print('Settings tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Settings tab: {e}', file=sys.stderr)
+
+        try:
+            self.learning_tab = AILearningTab(self)
+            self.tabs.addTab(self.learning_tab, "AI Learning")
+            print('AI Learning tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
+
+        try:
+            self.vocabularies_tab = VocabulariesTab(self)
+            self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
+            print('Vocabularies tab added', file=sys.stderr)
+        except Exception as e:
+            print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
 
         main_layout.addWidget(self.tabs)
         
@@ -4186,7 +4215,11 @@ class MainWindow(QMainWindow):
 
         actions = QHBoxLayout()
         revert_btn = QPushButton("Revert Selected")
+        revert_btn.setIcon(_icon('revert'))
+        revert_btn.setIconSize(QSize(16, 16))
         close_btn = QPushButton("Close")
+        close_btn.setIcon(_icon('close'))
+        close_btn.setIconSize(QSize(16, 16))
         actions.addWidget(revert_btn)
         actions.addStretch()
         actions.addWidget(close_btn)
@@ -4422,8 +4455,14 @@ class MainWindow(QMainWindow):
         buttons = QHBoxLayout()
         buttons.addStretch()
         save_btn = QPushButton("Save")
+        save_btn.setIcon(_icon('save'))
+        save_btn.setIconSize(QSize(16, 16))
         copy_btn = QPushButton("Copy")
+        copy_btn.setIcon(_icon('copy'))
+        copy_btn.setIconSize(QSize(16, 16))
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setIcon(_icon('close'))
+        cancel_btn.setIconSize(QSize(16, 16))
         buttons.addWidget(save_btn)
         buttons.addWidget(copy_btn)
         buttons.addWidget(cancel_btn)
@@ -4692,39 +4731,34 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"apply_theme error: {e}")
     
-    def create_top_section(self):
-        
-        # View Menu
+    def _build_menus(self):
+        """Build the application menu bar (View / Settings / Help)."""
         view_menu = self.menuBar().addMenu("&View")
-        
+
         gallery_action = view_menu.addAction("Switch to &Gallery")
         gallery_action.setShortcut("Ctrl+1")
         gallery_action.triggered.connect(lambda: self.tabs.setCurrentIndex(0))
-        
+
         library_action = view_menu.addAction("Switch to &Library")
         library_action.setShortcut("Ctrl+2")
         library_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
-        
+
         filters_action = view_menu.addAction("Switch to &Filters")
         filters_action.setShortcut("Ctrl+3")
         filters_action.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
-        
+
         view_menu.addSeparator()
-        
+
         refresh_action = view_menu.addAction("&Refresh Photos")
         refresh_action.setShortcut("F5")
         refresh_action.triggered.connect(self.refresh_photos)
-        
-        # Settings Menu
+
         settings_menu = self.menuBar().addMenu("&Settings")
-        
         prefs_action = settings_menu.addAction("&Preferences")
         prefs_action.setShortcut("Ctrl+,")
         prefs_action.triggered.connect(self.show_settings_dialog)
-        
-        # Help Menu
+
         help_menu = self.menuBar().addMenu("&Help")
-        
         about_action = help_menu.addAction("&About PhotoFlow")
         about_action.triggered.connect(self.show_about_dialog)
 
@@ -4823,6 +4857,8 @@ class MainWindow(QMainWindow):
         info_layout.addWidget(cache_path_label)
         
         clear_cache_btn = QPushButton("Clear Thumbnail Cache")
+        clear_cache_btn.setIcon(_icon('trash'))
+        clear_cache_btn.setIconSize(QSize(16, 16))
         clear_cache_btn.clicked.connect(self.clear_thumbnail_cache)
         info_layout.addWidget(clear_cache_btn)
         
@@ -4834,8 +4870,12 @@ class MainWindow(QMainWindow):
         # Buttons
         button_layout = QHBoxLayout()
         ok_btn = QPushButton("OK")
+        ok_btn.setIcon(_icon('check'))
+        ok_btn.setIconSize(QSize(16, 16))
         ok_btn.clicked.connect(lambda: self.apply_settings(dialog, gallery_size_combo.currentText(), theme_combo.currentText()))
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setIcon(_icon('close'))
+        cancel_btn.setIconSize(QSize(16, 16))
         cancel_btn.clicked.connect(dialog.close)
         button_layout.addStretch()
         button_layout.addWidget(ok_btn)
@@ -4878,20 +4918,27 @@ class MainWindow(QMainWindow):
         folder_row.addWidget(self.folder_input)
         
         browse_btn = QPushButton("Browse")
+        browse_btn.setIcon(_icon('folder'))
+        browse_btn.setIconSize(QSize(16, 16))
         browse_btn.clicked.connect(self.browse_folder)
         folder_row.addWidget(browse_btn)
 
         relink_btn = QPushButton("Relink Paths")
+        relink_btn.setIcon(_icon('link_external'))
+        relink_btn.setIconSize(QSize(16, 16))
         relink_btn.setToolTip("Update stored file paths to the selected root folder")
         relink_btn.clicked.connect(self.relink_filepaths)
         folder_row.addWidget(relink_btn)
         
         layout.addLayout(folder_row)
 
-        # Restore last folder selection
+        # Restore last folder selection and start watcher
         last_folder = self.settings.value("last_folder", "")
         if last_folder:
             self.folder_input.setText(last_folder)
+            # Defer watcher start until after the full UI is built
+            from PyQt6.QtCore import QTimer as _QTimer
+            _QTimer.singleShot(500, lambda: self._start_folder_watcher(last_folder) if last_folder and os.path.exists(last_folder) else None)
         
         # Options row
         options_row = QHBoxLayout()
@@ -4901,10 +4948,14 @@ class MainWindow(QMainWindow):
         options_row.addStretch()
         
         self.analyze_btn = QPushButton("Analyze Images")
+        self.analyze_btn.setIcon(_icon('sparkle'))
+        self.analyze_btn.setIconSize(QSize(16, 16))
         self.analyze_btn.clicked.connect(self.start_analysis)
         options_row.addWidget(self.analyze_btn)
         
         self.cancel_btn = QPushButton("Cancel Analysis")
+        self.cancel_btn.setIcon(_icon('stop'))
+        self.cancel_btn.setIconSize(QSize(16, 16))
         self.cancel_btn.clicked.connect(self.cancel_analysis)
         self.cancel_btn.setEnabled(False)
         options_row.addWidget(self.cancel_btn)
@@ -4919,9 +4970,10 @@ class MainWindow(QMainWindow):
         # Status label
         self.status_label = QLabel("")
         layout.addWidget(self.status_label)
-        
+
+        self._build_menus()
         return widget
-    
+
     def create_photos_tab(self):
         """Return the shared photos tab widget."""
         return self.photos_tab
@@ -5017,7 +5069,7 @@ class MainWindow(QMainWindow):
         bottom_toolbar.addWidget(QLabel("Set Status for Selected:"))
         
         self.status_dropdown = QComboBox()
-        self.status_dropdown.addItems(["Raw", "Needs Edit", "Ready for Release", "Released"])
+        self.status_dropdown.addItems(["Unreviewed", "Editing", "Ready", "Published"])
         bottom_toolbar.addWidget(self.status_dropdown)
         
         apply_status_btn = QPushButton("Apply Status")
@@ -5096,74 +5148,11 @@ class MainWindow(QMainWindow):
         return self.tiktok_tab
     
     # Notes UI removed from main window; notes are managed in Lightbox and Library column
-    
+
     def create_gallery_tab(self):
         """Return the shared gallery tab widget."""
         return self.gallery_tab
-    
-    def create_tag_cloud(self):
-        """Create tag cloud widget at bottom of app"""
-        widget = QFrame()
-        widget.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        widget.setMaximumHeight(120)
-        
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(10, 5, 10, 5)
-        
-        # Header with title and refresh button
-        self.ig_thumbnail_label.setObjectName("thumbnailPreview")
-        self.ig_thumbnail_label.setFixedSize(200, 200)
-        self.ig_thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ig_thumbnail_label.setText("No photo selected")
-        preview_layout.addWidget(self.ig_thumbnail_label)
-        
-        # Info and buttons
-        info_layout = QVBoxLayout()
-        
-        self.ig_photo_label = QLabel("No photo selected")
-        self.ig_photo_label.setStyleSheet("font-weight: bold;")
-        info_layout.addWidget(self.ig_photo_label)
-        
-        browse_btn = QPushButton("📂 Browse Photos")
-        browse_btn.clicked.connect(self.ig_select_photo)
-        info_layout.addWidget(browse_btn)
-        
-        self.ig_lightbox_btn = QPushButton("🔍 View in Lightbox")
-        self.ig_lightbox_btn.setEnabled(False)
-        self.ig_lightbox_btn.clicked.connect(self.ig_view_lightbox)
-        info_layout.addWidget(self.ig_lightbox_btn)
-        
-        info_layout.addStretch()
-        preview_layout.addLayout(info_layout)
-        
-        layout.addLayout(preview_layout)
-        
-        # Caption
-        layout.addWidget(QLabel("Caption:"))
-        self.ig_caption_edit = QTextEdit()
-        self.ig_caption_edit.setPlaceholderText("Enter caption (max 2,200 characters)...")
-        self.ig_caption_edit.setMaximumHeight(100)
-        layout.addWidget(self.ig_caption_edit)
-        
-        # Hashtags
-        layout.addWidget(QLabel("Hashtags:"))
-        self.ig_hashtags_edit = QLineEdit()
-        self.ig_hashtags_edit.setPlaceholderText("Separate with spaces (e.g., #photo #instagram #content)")
-        layout.addWidget(self.ig_hashtags_edit)
-        
-        # Post button
-        button_layout = QHBoxLayout()
-        self.ig_post_btn = QPushButton("📤 Post to Instagram")
-        self.ig_post_btn.setEnabled(False)
-        self.ig_post_btn.clicked.connect(self.post_to_instagram)
-        button_layout.addWidget(self.ig_post_btn)
-        button_layout.addStretch()
-        layout.addLayout(button_layout)
-        
-        layout.addStretch()
-        
-        return widget
-    
+
     def create_instagram_reel_tab(self):
         """Instagram Reel tab"""
         widget = QWidget()
@@ -5190,374 +5179,47 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Coming soon: Archive Stories as Highlights"))
         layout.addStretch()
         return widget
-    
-    def create_tiktok_tab(self):
-        """Create TikTok posting tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Header
-        header = QLabel("<h3>🎵 TikTok Direct Post</h3>")
-        layout.addWidget(header)
-        
-        # Auth section
-        auth_group = QGroupBox("Authentication")
-        auth_group.setObjectName("ttAuthGroup")
-        auth_layout = QVBoxLayout()
-        
-        self.tt_status_label = QLabel("Status: Not connected")
-        self.tt_status_label.setStyleSheet("color: red;")
-        auth_layout.addWidget(self.tt_status_label)
-        
-        auth_button_layout = QHBoxLayout()
-        self.tt_auth_btn = QPushButton("Connect TikTok Account")
-        self.tt_auth_btn.clicked.connect(self.connect_tiktok)
-        auth_button_layout.addWidget(self.tt_auth_btn)
-        
-        self.tt_logout_btn = QPushButton("Disconnect")
-        self.tt_logout_btn.setEnabled(False)
-        self.tt_logout_btn.clicked.connect(self.disconnect_tiktok)
-        auth_button_layout.addWidget(self.tt_logout_btn)
-        auth_button_layout.addStretch()
-        auth_layout.addLayout(auth_button_layout)
-        
-        auth_group.setLayout(auth_layout)
-        layout.addWidget(auth_group)
-        
-        # Post section
-        post_group = QGroupBox("Create Post")
-        post_layout = QVBoxLayout()
-        
-        # Photo/Video selection
-        post_layout.addWidget(QLabel("Select Video or Photo:"))
-        media_layout = QHBoxLayout()
-        self.tt_media_label = QLabel("No media selected")
-        media_layout.addWidget(self.tt_media_label)
-        self.tt_browse_media_btn = QPushButton("Browse")
-        self.tt_browse_media_btn.clicked.connect(self.tt_select_media)
-        media_layout.addWidget(self.tt_browse_media_btn)
-        post_layout.addLayout(media_layout)
-        
-        # Caption
-        post_layout.addWidget(QLabel("Caption:"))
-        self.tt_caption_edit = QTextEdit()
-        self.tt_caption_edit.setPlaceholderText("Enter caption (max 2,200 characters)...")
-        self.tt_caption_edit.setMaximumHeight(100)
-        post_layout.addWidget(self.tt_caption_edit)
-        
-        # Hashtags
-        post_layout.addWidget(QLabel("Hashtags:"))
-        self.tt_hashtags_edit = QLineEdit()
-        self.tt_hashtags_edit.setPlaceholderText("Separate with spaces (e.g., #foryou #viral #content)")
-        post_layout.addWidget(self.tt_hashtags_edit)
-        
-        # Post button
-        button_layout = QHBoxLayout()
-        self.tt_post_btn = QPushButton("📤 Post to TikTok")
-        self.tt_post_btn.setEnabled(False)
-        self.tt_post_btn.clicked.connect(self.post_to_tiktok)
-        button_layout.addWidget(self.tt_post_btn)
-        button_layout.addStretch()
-        post_layout.addLayout(button_layout)
-        
-        post_group.setLayout(post_layout)
-        layout.addWidget(post_group)
-        
-        layout.addStretch()
-        
-        return widget
-    
-    # Instagram posting methods
-    def connect_instagram(self):
-        """Connect to Instagram account with credential verification"""
-        # Get credentials from user
-        username, ok = QInputDialog.getText(self, "Instagram Login", "Username:")
-        if not ok or not username:
-            return
-        
-        password, ok = QInputDialog.getText(self, "Instagram Login", "Password:", QLineEdit.EchoMode.Password)
-        if not ok or not password:
-            return
-        
-        # Show verification progress with Cancel button
-        progress = QMessageBox(self)
-        progress.setWindowTitle("Verifying Instagram Credentials")
-        progress.setText("Testing login credentials...\nPlease wait.")
-        progress.setStandardButtons(QMessageBox.StandardButton.Cancel)
-        
-        try:
-            from instagrapi import Client
-            
-            # Test login
-            client = Client()
-            client.login(username, password)
-            
-            # If we get here, login was successful
-            progress.close()
-            
-            # Store credentials in database (encrypted)
-            creds = {"username": username, "password": password}
-            if self.db.store_api_credentials("instagram", creds):
-                self.ig_status_label.setText(f"Status: Connected as @{username}")
-                self.ig_status_label.setStyleSheet("color: green;")
-                self.ig_auth_btn.setEnabled(False)
-                self.ig_logout_btn.setEnabled(True)
-                self.ig_post_btn.setEnabled(True)
-                self.statusBar().showMessage(f"✅ Instagram account connected: @{username}", 3000)
-                QMessageBox.information(self, "Connected", f"Successfully connected to Instagram as @{username}!")
-            else:
-                QMessageBox.warning(self, "Error", "Failed to store credentials")
-        except Exception as e:
-            progress.close()
-            error_msg = str(e)
-            QMessageBox.critical(
-                self,
-                "Instagram Connection Failed",
-                f"Failed to connect to Instagram:\n\n{error_msg}\n\n"
-                f"Setup Requirements:\n"
-                f"• Username: Your Instagram username (not email)\n"
-                f"• Password: Your Instagram password\n\n"
-                f"If 2FA is enabled:\n"
-                f"• Go to Instagram Settings → Security → Authentication apps\n"
-                f"• Generate an app-specific password\n"
-                f"• Use that password instead\n\n"
-                f"If still failing:\n"
-                f"• Try logging in on your phone first to verify credentials\n"
-                f"• Wait 24 hours if Instagram blocked automation\n"
-                f"• Use Instagram's official Business API instead"
-            )
-    
-    def disconnect_instagram(self):
-        """Disconnect from Instagram"""
-        if self.db.delete_api_credentials("instagram"):
-            self.ig_status_label.setText("Status: Not connected")
-            self.ig_status_label.setStyleSheet("color: red;")
-            self.ig_auth_btn.setEnabled(True)
-            self.ig_logout_btn.setEnabled(False)
-            self.ig_post_btn.setEnabled(False)
-            self.statusBar().showMessage("Instagram account disconnected", 2000)
-    
-    def ig_select_photo(self):
-        """Select photo for Instagram post"""
-        picker = PhotoPickerDialog(self.db, self)
-        if picker.exec() == QDialog.DialogCode.Accepted and picker.selected_photo:
-            photo = picker.selected_photo
-            self.ig_selected_photo_id = photo['id']
-            self.ig_photo_label.setText(f"📸 {photo['id']:06d} - {photo.get('scene_type') or photo.get('filename', 'Photo')}")
-            
-            # Update thumbnail preview
-            if photo.get('filepath') and os.path.exists(photo['filepath']):
-                pixmap = self.get_cached_thumbnail(photo['filepath'], 200)
-                if pixmap and not pixmap.isNull():
-                    self.ig_thumbnail_label.setPixmap(pixmap)
-                else:
-                    self.ig_thumbnail_label.setText("[No Preview]")
-            
-            self.ig_lightbox_btn.setEnabled(True)
-            self.ig_post_btn.setEnabled(True)
-            self.statusBar().showMessage(f"Photo selected: {photo['id']:06d}", 2000)
-    
-    def ig_view_lightbox(self):
-        """View selected photo in lightbox"""
-        if hasattr(self, 'ig_selected_photo_id'):
-            photo = self.db.get_photo(self.ig_selected_photo_id)
-            if photo and photo.get('filepath'):
-                self.show_full_image(photo['filepath'], photo['id'])
-    
-    def post_to_instagram(self):
-        """Actually post to Instagram using instagrapi"""
-        if not hasattr(self, 'ig_selected_photo_id'):
-            QMessageBox.warning(self, "Error", "Please select a photo first")
-            return
-        
-        caption = self.ig_caption_edit.toPlainText()
-        hashtags = self.ig_hashtags_edit.text()
-        full_caption = f"{caption}\n\n{hashtags}".strip()
-        
-        if len(full_caption) > 2200:
-            QMessageBox.warning(self, "Error", f"Caption too long: {len(full_caption)}/2200 characters")
-            return
-        
-        photo = self.db.get_photo(self.ig_selected_photo_id)
-        if not photo or not photo.get('filepath') or not os.path.exists(photo['filepath']):
-            QMessageBox.warning(self, "Error", "Photo file not found")
-            return
-        
-        # Show progress dialog with Cancel button
-        progress = QMessageBox(self)
-        progress.setWindowTitle("Posting to Instagram")
-        progress.setText("Uploading to Instagram...\nPlease wait, this may take a minute.")
-        progress.setStandardButtons(QMessageBox.StandardButton.Cancel)
-        progress.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        
-        try:
-            from instagrapi import Client
-            
-            # Get stored credentials
-            creds = self.db.get_api_credentials("instagram")
-            if not creds:
-                progress.close()
-                raise Exception("Instagram credentials not found. Please reconnect.")
-            
-            username = creds.get("username")
-            password = creds.get("password")
-            
-            # Show the progress dialog
-            progress.show()
-            QApplication.processEvents()
-            
-            # Login and upload
-            client = Client()
-            client.login(username, password)
-            
-            # Upload photo
-            media = client.photo_upload(photo['filepath'], caption=full_caption)
-            
-            # Log the post
-            post_url = f"https://instagram.com/p/{media.id}/"
-            self.db.log_post(
-                photo_id=self.ig_selected_photo_id,
-                platform="instagram",
-                post_type="post",
-                caption=full_caption,
-                post_url=post_url,
-                post_id=str(media.id),
-                status="success"
-            )
-            
-            # Close progress and show success
-            if progress.isVisible():
-                progress.close()
-            
-            QMessageBox.information(
-                self, 
-                "Posted Successfully!", 
-                f"Photo posted to Instagram!\n\nURL: {post_url}"
-            )
-            
-            # Clear form
-            self.ig_caption_edit.clear()
-            self.ig_hashtags_edit.clear()
-            self.statusBar().showMessage("Successfully posted to Instagram!", 3000)
-            
-        except Exception as e:
-            error_msg = str(e)
-            
-            # Close progress and show error
-            if progress.isVisible():
-                progress.close()
-            
-            # Log the failed post
-            self.db.log_post(
-                photo_id=self.ig_selected_photo_id,
-                platform="instagram",
-                post_type="post",
-                caption=full_caption,
-                status="failed",
-                error_msg=error_msg
-            )
-            
-            QMessageBox.critical(
-                self,
-                "Instagram Upload Failed",
-                f"Error uploading to Instagram:\n\n{error_msg}\n\n"
-                f"Common issues:\n"
-                f"• Wrong username or password\n"
-                f"• Two-factor authentication enabled\n"
-                f"• Instagram flagged suspicious activity\n"
-                f"• Rate limit exceeded"
-            )
-    
-    # TikTok posting methods
-    def connect_tiktok(self):
-        """Connect to TikTok account"""
-        # Get credentials from user
-        username, ok = QInputDialog.getText(self, "TikTok Login", "Username:")
-        if not ok or not username:
-            return
-        
-        password, ok = QInputDialog.getText(self, "TikTok Login", "Password:", QLineEdit.EchoMode.Password)
-        if not ok or not password:
-            return
-        
-        try:
-            # Store credentials in database (encrypted)
-            creds = {"username": username, "password": password}
-            if self.db.store_api_credentials("tiktok", creds):
-                self.tt_status_label.setText(f"Status: Connected as @{username}")
-                self.tt_status_label.setStyleSheet("color: green;")
-                self.tt_auth_btn.setEnabled(False)
-                self.tt_logout_btn.setEnabled(True)
-                self.tt_post_btn.setEnabled(True)
-                self.statusBar().showMessage(f"TikTok account connected: @{username}", 3000)
-            else:
-                QMessageBox.warning(self, "Error", "Failed to store credentials")
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Connection failed: {e}")
-    
-    def disconnect_tiktok(self):
-        """Disconnect from TikTok"""
-        if self.db.delete_api_credentials("tiktok"):
-            self.tt_status_label.setText("Status: Not connected")
-            self.tt_status_label.setStyleSheet("color: red;")
-            self.tt_auth_btn.setEnabled(True)
-            self.tt_logout_btn.setEnabled(False)
-            self.tt_post_btn.setEnabled(False)
-            self.statusBar().showMessage("TikTok account disconnected", 2000)
-    
-    def tt_select_media(self):
-        """Select media for TikTok post"""
-        picker = PhotoPickerDialog(self.db, self)
-        if picker.exec() == QDialog.DialogCode.Accepted and picker.selected_photo:
-            photo = picker.selected_photo
-            self.tt_selected_media_id = photo['id']
-            self.tt_media_label.setText(f"🎬 {photo['id']:06d} - {photo.get('scene_type') or photo.get('filename', 'Media')}")
-            self.statusBar().showMessage(f"Media selected: {photo['id']:06d}", 2000)
-    
+
     def post_to_tiktok(self):
         """Post to TikTok"""
         if not hasattr(self, 'tt_selected_media_id'):
             QMessageBox.warning(self, "Error", "Please select media first")
             return
-        
+
         caption = self.tt_caption_edit.toPlainText()
         hashtags = self.tt_hashtags_edit.text()
         full_caption = f"{caption}\n{hashtags}".strip()
-        
+
         if len(full_caption) > 2200:
             QMessageBox.warning(self, "Error", f"Caption too long: {len(full_caption)}/2200 characters")
             return
-        
-        QMessageBox.information(self, "Posted", 
-            f"Media {self.tt_selected_media_id:06d} posted to TikTok!\n"
-            f"Caption: {full_caption[:50]}...")
-        # TODO: Implement actual posting via TikTok API
-    
-    def check_api_credentials(self):
-        """Check for saved API credentials and restore UI state"""
+
         try:
-            # Check Instagram
-            if self.db.has_api_credentials("instagram"):
-                creds = self.db.get_api_credentials("instagram")
-                username = creds.get("username", "Unknown")
-                self.ig_status_label.setText(f"Status: Connected as @{username}")
-                self.ig_status_label.setStyleSheet("color: green;")
-                self.ig_auth_btn.setEnabled(False)
-                self.ig_logout_btn.setEnabled(True)
-                self.ig_post_btn.setEnabled(True)
-            
-            # Check TikTok
-            if self.db.has_api_credentials("tiktok"):
-                creds = self.db.get_api_credentials("tiktok")
-                username = creds.get("username", "Unknown")
-                self.tt_status_label.setText(f"Status: Connected as @{username}")
-                self.tt_status_label.setStyleSheet("color: green;")
-                self.tt_auth_btn.setEnabled(False)
-                self.tt_logout_btn.setEnabled(True)
-                self.tt_post_btn.setEnabled(True)
+            if not self.db.has_api_credentials('tiktok'):
+                QMessageBox.warning(self, 'Not Connected', 'Connect your TikTok account in Settings first.')
+                return
+            creds = self.db.get_api_credentials('tiktok')
+            from core.social.tiktok_api import TikTokAPI
+            api = TikTokAPI(creds)
+            photo = self.db.get_photo(self.tt_selected_media_id)
+            if not photo:
+                QMessageBox.warning(self, 'Error', 'Photo not found in library.')
+                return
+            ok, msg = api.post_photo(photo['filepath'], full_caption)
+            if ok:
+                QMessageBox.information(self, 'Posted', f'Posted to TikTok!\n{msg}')
+                self.statusBar().showMessage('TikTok post sent', 3000)
+            else:
+                QMessageBox.warning(self, 'Post Failed', msg)
+        except ImportError:
+            QMessageBox.information(
+                self, 'TikTok API Not Available',
+                'Direct TikTok posting requires the TikTok API module.\n'
+                'Use the TikTok tab to manage posts.'
+            )
         except Exception as e:
-            print(f"Error checking credentials: {e}")
-    
+            QMessageBox.critical(self, 'Error', f'Failed to post: {e}')
+
     def create_tag_cloud(self):
         """Create tag cloud widget at bottom of app"""
         widget = QFrame()
@@ -5608,311 +5270,11 @@ class MainWindow(QMainWindow):
         return widget
     
     # Notes UI removed from main window; notes are managed in Lightbox and Library column
-    
+
     def create_gallery_tab(self):
         """Return the shared gallery tab widget."""
         return self.gallery_tab
-    
-    def create_filters_tab(self):
-        """Create filters and search tab"""
-        widget = QWidget()
-        main_layout = QVBoxLayout(widget)
-        
-        # Scroll area for filters
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        layout = QVBoxLayout(scroll_widget)
-        
-        # Status filters
-        layout.addWidget(QLabel("<b>Status:</b>"))
-        self.filter_raw = QCheckBox("Raw")
-        layout.addWidget(self.filter_raw)
-        self.filter_needs_edit = QCheckBox("Needs Edit")
-        layout.addWidget(self.filter_needs_edit)
-        self.filter_ready = QCheckBox("Ready for Release")
-        layout.addWidget(self.filter_ready)
-        self.filter_released = QCheckBox("Released")
-        layout.addWidget(self.filter_released)
-        
-        # Unknown values filter (for AI-flagged items)
-        layout.addWidget(QLabel("<b>Quick Filters:</b>"))
-        self.filter_unknowns = QCheckBox("Show only 'unknown' values")
-        self.filter_unknowns.setToolTip("Show photos with any field marked as 'unknown' by AI")
-        layout.addWidget(self.filter_unknowns)
-        
-        # Platform filters
-        layout.addWidget(QLabel("<b>Released Platforms:</b>"))
-        self.filter_ig = QCheckBox("Released to Instagram")
-        layout.addWidget(self.filter_ig)
-        self.filter_tiktok = QCheckBox("Released to TikTok")
-        layout.addWidget(self.filter_tiktok)
-        # Scene type filter
-        layout.addWidget(QLabel("<b>Scene Type:</b>"))
-        self.filter_scene = QComboBox()
-        self.filter_scene.addItems(["(Any)", "portrait", "landscape", "street", "event", "food",
-                                     "product", "travel", "architecture", "macro", "abstract",
-                                     "sports", "nature", "night", "interior"])
-        self.filter_scene.setEditable(True)
-        layout.addWidget(self.filter_scene)
 
-        # Mood filter
-        layout.addWidget(QLabel("<b>Mood:</b>"))
-        self.filter_mood = QComboBox()
-        self.filter_mood.addItems(["(Any)", "bright", "dark", "dramatic", "cozy", "energetic",
-                                    "calm", "romantic", "mysterious", "playful"])
-        self.filter_mood.setEditable(True)
-        layout.addWidget(self.filter_mood)
-
-        # Subjects filter
-        layout.addWidget(QLabel("<b>Subjects:</b>"))
-        self.filter_subjects = QComboBox()
-        self.filter_subjects.addItems(["(Any)", "people", "animal", "vehicle", "building",
-                                        "food", "plant", "sky", "water", "none"])
-        self.filter_subjects.setEditable(True)
-        layout.addWidget(self.filter_subjects)
-
-        # Location filter
-        layout.addWidget(QLabel("<b>Location:</b>"))
-        self.filter_location = QLineEdit()
-        self.filter_location.setPlaceholderText("Any location")
-        layout.addWidget(self.filter_location)
-
-        # Package filter
-        layout.addWidget(QLabel("<b>Package/Album:</b>"))
-        self.filter_package = QLineEdit()
-        self.filter_package.setPlaceholderText("Any package or album")
-        layout.addWidget(self.filter_package)
-        
-        layout.addStretch()
-        scroll.setWidget(scroll_widget)
-        main_layout.addWidget(scroll)
-        
-        # Filter buttons at bottom
-        filter_buttons = QHBoxLayout()
-        apply_filters_btn = QPushButton("Apply Filters")
-        apply_filters_btn.clicked.connect(self.apply_filters)
-        filter_buttons.addWidget(apply_filters_btn)
-        
-        clear_filters_btn = QPushButton("Clear Filters")
-        clear_filters_btn.clicked.connect(self.clear_filters)
-        filter_buttons.addWidget(clear_filters_btn)
-        
-        main_layout.addLayout(filter_buttons)
-        
-        return widget
-    
-    def create_vocabulary_tab(self):
-        """Return the shared vocabularies tab widget."""
-        return self.vocabularies_tab
-    
-    def create_learning_tab(self):
-        """Return the shared AI learning tab widget."""
-        return self.learning_tab
-    
-    def create_face_matching_tab(self):
-        
-        # Toolbar
-        toolbar = QHBoxLayout()
-        self.vocab_input = QLineEdit()
-        self.vocab_input.setPlaceholderText("Enter new value...")
-        toolbar.addWidget(self.vocab_input)
-        
-        add_btn = QPushButton("Add Value")
-        add_btn.clicked.connect(self.add_vocabulary_value)
-        toolbar.addWidget(add_btn)
-        
-        rename_btn = QPushButton("Rename Selected")
-        rename_btn.clicked.connect(self.rename_vocabulary_value)
-        toolbar.addWidget(rename_btn)
-        
-        delete_btn = QPushButton("Delete Selected")
-        delete_btn.clicked.connect(self.delete_vocabulary_value)
-        toolbar.addWidget(delete_btn)
-        
-        cleanup_btn = QPushButton("Clean Unused")
-        cleanup_btn.clicked.connect(self.cleanup_vocabulary)
-        toolbar.addWidget(cleanup_btn)
-        
-        layout.addLayout(toolbar)
-        
-        # List widget for vocabulary values
-        self.vocab_list = QTableWidget()
-        self.vocab_list.setColumnCount(3)
-        self.vocab_list.setHorizontalHeaderLabels(["Value", "Description", "Usage Count"])
-        self.vocab_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.vocab_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.vocab_list.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.vocab_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.vocab_list.itemChanged.connect(self.on_vocab_description_changed)
-        layout.addWidget(self.vocab_list)
-        
-        # Load initial vocabulary
-        self.load_vocabulary_for_field(self.vocab_field_selector.currentText())
-        
-        return widget
-    
-    def create_learning_tab(self):
-        """Create AI Learning tab to show what the AI has learned"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Info label
-        info = QLabel("This shows the patterns AI has learned from your corrections.\n"
-                     "The more you correct, the smarter it gets!")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        # Refresh button
-        refresh_btn = QPushButton("Refresh Learning Data")
-        refresh_btn.clicked.connect(self.refresh_learning_data)
-        layout.addWidget(refresh_btn)
-        
-        # Table to show corrections
-        self.learning_table = QTableWidget()
-        self.learning_table.setColumnCount(5)
-        self.learning_table.setHorizontalHeaderLabels(["Field", "AI Said", "You Corrected To", "Times", "Last Correction"])
-        self.learning_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.learning_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.learning_table.setSortingEnabled(True)
-        layout.addWidget(self.learning_table)
-        
-        # Backup/Restore buttons
-        backup_layout = QHBoxLayout()
-        
-        backup_btn = QPushButton("📦 Backup Learning Data")
-        backup_btn.clicked.connect(self.manual_backup_learning_data)
-        backup_layout.addWidget(backup_btn)
-        
-        restore_btn = QPushButton("♻️ Restore from Backup")
-        restore_btn.clicked.connect(self.restore_learning_data)
-        backup_layout.addWidget(restore_btn)
-        
-        layout.addLayout(backup_layout)
-        
-        # Clear learning button (with warning color)
-        clear_btn = QPushButton("⚠️ Clear All Learning Data")
-        clear_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; font-weight: bold; }")
-        clear_btn.clicked.connect(self.clear_learning_data)
-        layout.addWidget(clear_btn)
-        
-        # Load initial data
-        self.refresh_learning_data()
-        
-        return widget
-    
-    def create_face_matching_tab(self):
-        """Return the shared face matching tab widget."""
-        return self.face_matching_tab
-    
-    def get_photo_id_from_row(self, row: int) -> int:
-        """Safely extract photo ID from table row using COL_ID constant"""
-        try:
-            id_item = self.photo_table.item(row, self.COL_ID)
-            if id_item:
-                return int(id_item.text())
-        except (ValueError, AttributeError):
-            pass
-        return None
-        self.benchmark_scroll.setWidget(self.benchmark_container)
-        left_layout.addWidget(self.benchmark_scroll, 1)
-        
-        # Buttons for benchmark management
-        benchmark_buttons = QHBoxLayout()
-        add_benchmark_btn = QPushButton("Add Photos")
-        add_benchmark_btn.clicked.connect(self.add_benchmark_photos)
-        benchmark_buttons.addWidget(add_benchmark_btn)
-        
-        clear_benchmark_btn = QPushButton("Clear All")
-        clear_benchmark_btn.clicked.connect(self.clear_benchmark_photos)
-        benchmark_buttons.addWidget(clear_benchmark_btn)
-        
-        left_layout.addLayout(benchmark_buttons)
-        
-        # Run comparison button
-        run_btn = QPushButton("🔍 Analyze All Photos")
-        run_btn.clicked.connect(self.run_face_similarity_analysis)
-        run_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
-        left_layout.addWidget(run_btn)
-        
-        content_layout.addWidget(left_widget, 1)
-        
-        # RIGHT SIDE: Log output (matching left side height)
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        
-        log_label = QLabel("<b>Analysis Log</b>")
-        right_layout.addWidget(log_label)
-        
-        self.face_log_output = QTextEdit()
-        self.face_log_output.setReadOnly(True)
-        self.face_log_output.setFontFamily("Courier")
-        self.face_log_output.setFontPointSize(8)
-        self.face_log_output.setStyleSheet("background-color: #f5f5f5; color: #333;")
-        right_layout.addWidget(self.face_log_output, 1)
-        
-        content_layout.addWidget(right_widget, 1)
-        layout.addLayout(content_layout)
-        
-        # Filter and Results section
-        results_label = QLabel("<b>Results:</b> (Filter photos by similarity rating)")
-        layout.addWidget(results_label)
-        
-        # Filter by rating + actions
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Show photos rated:"))
-        
-        self.rating_filter = QComboBox()
-        self.rating_filter.addItems(["All", "5 stars", "4-5 stars", "3-5 stars", "2-5 stars", "1-5 stars", "Unrated"])
-        self.rating_filter.currentTextChanged.connect(self.apply_face_similarity_filter)
-        filter_layout.addWidget(self.rating_filter)
-        
-        # Flag selected as button
-        flag_btn = QPushButton("🚩 Flag Selected with Rating")
-        flag_btn.clicked.connect(self.flag_selected_photos)
-        filter_layout.addWidget(flag_btn)
-        
-        # Clear results button (also clears benchmarks)
-        clear_results_btn = QPushButton("Clear Results")
-        clear_results_btn.setToolTip("Reset face match ratings to unrated (0) and clear benchmark photos")
-        clear_results_btn.clicked.connect(self.clear_face_similarity_results)
-        filter_layout.addWidget(clear_results_btn)
-
-        filter_layout.addStretch()
-        layout.addLayout(filter_layout)
-        
-        # Results table
-        self.face_results_table = QTableWidget()
-        self.face_results_table.setColumnCount(6)
-        self.face_results_table.setHorizontalHeaderLabels(["ID", "Thumbnail", "Filename", "Rating", "Confidence", "Flag"])
-        
-        # Set column widths
-        self.face_results_table.setColumnWidth(0, 40)      # ID
-        self.face_results_table.setColumnWidth(1, 60)      # Thumbnail
-        self.face_results_table.setColumnWidth(2, 250)     # Filename
-        self.face_results_table.setColumnWidth(3, 80)      # Rating
-        self.face_results_table.setColumnWidth(4, 100)     # Confidence
-        self.face_results_table.setColumnWidth(5, 50)      # Flag checkbox
-        
-        self.face_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.face_results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.face_results_table.setAlternatingRowColors(True)
-        self.face_results_table.setSortingEnabled(True)
-        self.face_results_table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self.face_results_table.doubleClicked.connect(self.open_photo_from_face_results)
-        layout.addWidget(self.face_results_table)
-        
-        # Initialize benchmark photos list (persistent)
-        self.benchmark_photos = []
-        self.load_benchmarks_from_settings()
-        self.render_benchmark_grid()
-
-        # Load persisted analysis results
-        self.load_face_similarity_results()
-        
-        return widget
-    
     def add_benchmark_photos(self):
         if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
             self.face_matching_tab.add_benchmark_photos()
@@ -6667,52 +6029,9 @@ class MainWindow(QMainWindow):
                 break
     
     def refresh_learning_data(self):
-        """Refresh the AI learning data display"""
-        self.learning_table.setSortingEnabled(False)
-        self.learning_table.setRowCount(0)
-        
-        try:
-            # Get correction statistics
-            corrections = self.db.cursor.execute('''
-                SELECT 
-                    field_name,
-                    original_value,
-                    corrected_value,
-                    COUNT(*) as count,
-                    MAX(correction_date) as last_date
-                FROM ai_corrections
-                WHERE original_value IS NOT NULL 
-                AND corrected_value IS NOT NULL
-                AND original_value != corrected_value
-                GROUP BY field_name, original_value, corrected_value
-                ORDER BY count DESC, last_date DESC
-            ''').fetchall()
-            
-            for field, orig, corrected, count, last_date in corrections:
-                row = self.learning_table.rowCount()
-                self.learning_table.insertRow(row)
-                
-                # Field name (readable)
-                field_readable = field.replace('_', ' ').title()
-                self.learning_table.setItem(row, 0, QTableWidgetItem(field_readable))
-                
-                # Original value
-                self.learning_table.setItem(row, 1, QTableWidgetItem(orig or 'unknown'))
-                
-                # Corrected value
-                self.learning_table.setItem(row, 2, QTableWidgetItem(corrected or ''))
-                
-                # Count
-                self.learning_table.setItem(row, 3, QTableWidgetItem(str(count)))
-                
-                # Last correction date
-                self.learning_table.setItem(row, 4, QTableWidgetItem(last_date or ''))
-            
-            self.statusBar().showMessage(f"Loaded {len(corrections)} learned patterns", 2000)
-        except Exception as e:
-            print(f"Error loading learning data: {e}")
-        
-        self.learning_table.setSortingEnabled(True)
+        """Refresh the AI learning data display — delegates to AILearningTab."""
+        if hasattr(self, 'learning_tab'):
+            self.learning_tab.refresh_learning_data()
     
     def clear_learning_data(self):
         """Clear all AI learning data"""
@@ -7023,8 +6342,59 @@ class MainWindow(QMainWindow):
         if folder:
             self.folder_input.setText(folder)
             self.save_last_folder(folder)
+            self._start_folder_watcher(folder)
             # Optionally refresh UI immediately
             self.refresh_photos()
+
+    def _start_folder_watcher(self, folder: str):
+        """Start (or restart) the background folder watcher for the given folder."""
+        try:
+            # Stop any existing watcher
+            fw = getattr(self, '_folder_watcher', None)
+            if fw and fw.isRunning():
+                fw.stop()
+                fw.wait(1000)
+
+            from core.folder_watcher import FolderWatcher
+            include_sub = self.subfolder_checkbox.isChecked() if hasattr(self, 'subfolder_checkbox') else True
+            # Read watcher interval from Settings tab if available (default 30s)
+            interval = 30
+            try:
+                st = getattr(self, 'settings_tab', None)
+                if st and hasattr(st, 'watcher_interval_spin'):
+                    interval = st.watcher_interval_spin.value()
+            except Exception:
+                pass
+            self._folder_watcher = FolderWatcher(folder, self.db, interval_secs=interval,
+                                                  include_subfolders=include_sub)
+            self._folder_watcher.new_photo_found.connect(self._on_new_photo_found)
+            self._folder_watcher.status_update.connect(
+                lambda msg: self.statusBar().showMessage(msg, 3000) if self.statusBar() else None
+            )
+            self._folder_watcher.start()
+        except Exception as e:
+            print(f"[FolderWatcher] Could not start: {e}")
+
+    def _on_new_photo_found(self, filepath: str):
+        """Handle a new file detected by the folder watcher — add it to DB."""
+        try:
+            from core.exif_extractor import extract_exif
+            from core.duplicate_detector import perceptual_hash, md5_hash
+
+            meta = extract_exif(filepath)
+            meta['perceptual_hash'] = perceptual_hash(filepath)
+            meta['file_hash'] = md5_hash(filepath)
+            photo_id = self.db.add_photo(filepath, meta)
+            photo_data = self.db.get_photo(photo_id)
+            if photo_data:
+                self.add_photo_to_table(photo_data)
+                self.refresh_gallery()
+                if self.statusBar():
+                    self.statusBar().showMessage(
+                        f"New photo detected: {Path(filepath).name}", 4000
+                    )
+        except Exception as e:
+            print(f"[FolderWatcher] Error importing {filepath}: {e}")
     
     def save_last_folder(self, folder):
         """Save the last used folder to settings"""
@@ -7248,8 +6618,8 @@ class MainWindow(QMainWindow):
         self.photo_table.setItem(row, self.COL_OBJECTS, QTableWidgetItem(photo.get('objects_detected') or ''))
 
         # Status text
-        status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready for Release', 'released': 'Released'}
-        self.photo_table.setItem(row, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
+        status_map = {'raw': 'Unreviewed', 'needs_edit': 'Editing', 'ready': 'Ready', 'released': 'Published'}
+        self.photo_table.setItem(row, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Unreviewed')))
 
         # Checkboxes for release status
         ig_item = QTableWidgetItem()
@@ -7506,64 +6876,65 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Updated {len(target_ids)} photo(s) with packages", 3000)
     
     def apply_filters(self):
-        """Apply filters to photo list"""
+        """Apply filters to photo list. All filter state is read from FiltersTab."""
         all_photos = self.db.get_all_photos()
-        
-        # Filter by status
-        status_filters = []
-        if self.filter_raw.isChecked():
-            status_filters.append('raw')
-        if self.filter_needs_edit.isChecked():
-            status_filters.append('needs_edit')
-        if self.filter_ready.isChecked():
-            status_filters.append('ready')
-        if self.filter_released.isChecked():
-            status_filters.append('released')
-        
-        # Unknown values filter
-        show_only_unknowns = self.filter_unknowns.isChecked()
-        
-        # Get metadata filter values
-        filter_scene = self.filter_scene.currentText() if hasattr(self, 'filter_scene') and self.filter_scene.currentText() != "(Any)" else ""
-        filter_mood = self.filter_mood.currentText() if hasattr(self, 'filter_mood') and self.filter_mood.currentText() != "(Any)" else ""
-        filter_subjects = self.filter_subjects.currentText() if hasattr(self, 'filter_subjects') and self.filter_subjects.currentText() != "(Any)" else ""
-        filter_location = self.filter_location.text().strip().lower() if hasattr(self, 'filter_location') else ""
-        filter_package = self.filter_package.text().strip().lower() if hasattr(self, 'filter_package') else ""
 
-        # New filters — read from FiltersTab widget if it exists, else from inline attrs
+        # All filter widgets live on the FiltersTab instance.
         _ft = getattr(self, 'filters_tab', None)
-        filter_quality = ""
-        filter_has_exif = False
-        filter_has_gps = False
-        if _ft:
-            q = _ft.filter_quality.currentText()
-            filter_quality = q if q != "(Any)" else ""
-            filter_has_exif = _ft.filter_has_exif.isChecked()
-            filter_has_gps = _ft.filter_has_gps.isChecked()
-        filter_tag = _ft.filter_tag.text().strip().lower() if _ft else ""
+
+        # ── Status ───────────────────────────────────────────────────
+        status_filters = []
+        if _ft and _ft.filter_raw.isChecked():
+            status_filters.append('raw')
+        if _ft and _ft.filter_needs_edit.isChecked():
+            status_filters.append('needs_edit')
+        if _ft and _ft.filter_ready.isChecked():
+            status_filters.append('ready')
+        if _ft and _ft.filter_released.isChecked():
+            status_filters.append('released')
+
+        show_only_unknowns = _ft.filter_unknowns.isChecked() if _ft else False
+
+        # ── Metadata ─────────────────────────────────────────────────
+        def _combo(_ft, attr):
+            w = getattr(_ft, attr, None)
+            v = w.currentText() if w else ''
+            return '' if v in ('', '(Any)') else v
+
+        def _text(_ft, attr):
+            w = getattr(_ft, attr, None)
+            return w.text().strip().lower() if w else ''
+
+        filter_scene = _combo(_ft, 'filter_scene')
+        filter_mood = _combo(_ft, 'filter_mood')
+        filter_subjects = _combo(_ft, 'filter_subjects')
+        filter_location = _text(_ft, 'filter_location')
+        filter_package = _text(_ft, 'filter_package')
+        filter_quality = _combo(_ft, 'filter_quality')
+        filter_tag = _text(_ft, 'filter_tag')
+        filter_content_rating = _combo(_ft, 'filter_content_rating')
+        filter_has_exif = _ft.filter_has_exif.isChecked() if _ft else False
+        filter_has_gps = _ft.filter_has_gps.isChecked() if _ft else False
+        filter_ig = _ft.filter_ig.isChecked() if _ft else False
+        filter_tiktok = _ft.filter_tiktok.isChecked() if _ft else False
 
         # Filter photos
         filtered_photos = []
         for photo in all_photos:
             # Unknown values filter
             if show_only_unknowns:
-                has_unknown = False
                 ai_fields = ['scene_type', 'mood', 'subjects', 'location']
-                for field in ai_fields:
-                    if photo.get(field) == 'unknown':
-                        has_unknown = True
-                        break
-                if not has_unknown:
+                if not any(not photo.get(f) for f in ai_fields):
                     continue
 
             # Status filter
             if status_filters and photo.get('status', 'raw') not in status_filters:
                 continue
-            
+
             # Platform filters
-            if hasattr(self, 'filter_ig') and self.filter_ig.isChecked() and not photo['released_instagram']:
+            if filter_ig and not photo['released_instagram']:
                 continue
-            if hasattr(self, 'filter_tiktok') and self.filter_tiktok.isChecked() and not photo['released_tiktok']:
+            if filter_tiktok and not photo['released_tiktok']:
                 continue
 
             # Metadata filters (case-insensitive partial match)
@@ -7588,6 +6959,8 @@ class MainWindow(QMainWindow):
             if filter_has_gps and not (photo.get('exif_gps_lat') and photo.get('exif_gps_lon')):
                 continue
             if filter_tag and filter_tag not in (photo.get('tags') or '').lower():
+                continue
+            if filter_content_rating and (photo.get('content_rating') or 'general') != filter_content_rating:
                 continue
 
             filtered_photos.append(photo)
@@ -7619,8 +6992,8 @@ class MainWindow(QMainWindow):
             self.photo_table.setItem(i, self.COL_OBJECTS, QTableWidgetItem(photo.get('objects_detected') or ''))
 
             # Status text
-            status_map = {'raw': 'Raw', 'needs_edit': 'Needs Edit', 'ready': 'Ready for Release', 'released': 'Released'}
-            self.photo_table.setItem(i, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Raw')))
+            status_map = {'raw': 'Unreviewed', 'needs_edit': 'Editing', 'ready': 'Ready', 'released': 'Published'}
+            self.photo_table.setItem(i, self.COL_STATUS, QTableWidgetItem(status_map.get(photo.get('status', 'raw'), 'Unreviewed')))
 
             # Checkboxes for release status
             ig_item = QTableWidgetItem()
@@ -7660,31 +7033,10 @@ class MainWindow(QMainWindow):
         self.refresh_gallery_with_photos(filtered_photos)
     
     def clear_filters(self):
-        """Clear all filters and show all photos"""
-        # Status filters
-        self.filter_raw.setChecked(False)
-        self.filter_needs_edit.setChecked(False)
-        self.filter_ready.setChecked(False)
-        self.filter_released.setChecked(False)
-        
-        # Platform filters
-        if hasattr(self, 'filter_ig'):
-            self.filter_ig.setChecked(False)
-        if hasattr(self, 'filter_tiktok'):
-            self.filter_tiktok.setChecked(False)
-
-        # Metadata filters
-        if hasattr(self, 'filter_scene'):
-            self.filter_scene.setCurrentIndex(0)
-        if hasattr(self, 'filter_mood'):
-            self.filter_mood.setCurrentIndex(0)
-        if hasattr(self, 'filter_subjects'):
-            self.filter_subjects.setCurrentIndex(0)
-        if hasattr(self, 'filter_location'):
-            self.filter_location.clear()
-        if hasattr(self, 'filter_package'):
-            self.filter_package.clear()
-        
+        """Clear all filters and show all photos."""
+        _ft = getattr(self, 'filters_tab', None)
+        if _ft:
+            _ft.clear_filters()
         self.refresh_photos()
         self.refresh_gallery()
         self.statusBar().showMessage("Filters cleared", 3000)
@@ -7755,11 +7107,13 @@ class MainWindow(QMainWindow):
                     continue
 
                 if col == self.COL_STATUS:  # Status - special handling
-                    status_map = {'Raw': 'raw', 'Needs Edit': 'needs_edit', 'Ready for Release': 'ready', 'Released': 'released'}
+                    status_map = {'Unreviewed': 'raw', 'Editing': 'needs_edit', 'Ready': 'ready', 'Published': 'released'}
+                    # Also accept old display names for backwards compat
+                    status_map.update({'Raw': 'raw', 'Needs Edit': 'needs_edit', 'Ready for Release': 'ready', 'Released': 'released'})
                     db_value = status_map.get(text, text.lower().replace(' ', '_'))
                     self.db.update_photo_metadata(photo_id, {'status': db_value})
-                    reverse_map = {v: k for k, v in status_map.items()}
-                    item.setText(reverse_map.get(db_value, text))
+                    display_map = {'raw': 'Unreviewed', 'needs_edit': 'Editing', 'ready': 'Ready', 'released': 'Published'}
+                    item.setText(display_map.get(db_value, text))
                 elif col in column_to_field:
                     field_name = column_to_field[col]
                     if field_name == 'package_name':
@@ -7801,8 +7155,8 @@ class MainWindow(QMainWindow):
         id_to_row = self.map_photo_ids_to_rows(target_ids)
         
         status_text = self.status_dropdown.currentText()
-        status_map = {'Raw': 'raw', 'Needs Edit': 'needs_edit', 'Ready for Release': 'ready', 'Released': 'released'}
-        status_value = status_map[status_text]
+        status_map = {'Unreviewed': 'raw', 'Editing': 'needs_edit', 'Ready': 'ready', 'Published': 'released'}
+        status_value = status_map.get(status_text, 'raw')
         
         # Update database and table
         updated = 0

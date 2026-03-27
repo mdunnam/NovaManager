@@ -4,6 +4,7 @@ Rename by pattern, resize, convert, export to folder, watermark.
 """
 import os
 import shutil
+import zipfile
 from pathlib import Path
 from datetime import datetime
 
@@ -44,6 +45,8 @@ class _BatchWorker(QThread):
                     self._rename(photo)
                 elif self.operation == 'export':
                     self._export(photo)
+                elif self.operation == 'zip':
+                    self._zip_add(photo)
                 elif self.operation == 'resize':
                     self._resize(photo)
                 elif self.operation == 'watermark':
@@ -98,6 +101,16 @@ class _BatchWorker(QThread):
             dest = dest_dir / f'{stem}_copy{suffix}'
         shutil.copy2(fp, dest)
         self.log.emit(f'Exported: {fp.name} → {dest}')
+
+    def _zip_add(self, photo):
+        """Add this photo to the running zip archive stored in self.params['_zf']."""
+        fp = Path(photo.get('filepath', ''))
+        if not fp.exists():
+            raise FileNotFoundError(fp)
+        zf = self.params.get('_zf')
+        if zf is not None:
+            zf.write(fp, fp.name)
+            self.log.emit(f'Zipped: {fp.name}')
 
     def _resize(self, photo):
         fp = Path(photo.get('filepath', ''))
@@ -254,6 +267,30 @@ class BatchTab(QWidget):
         export_form.addRow('', export_btn)
         layout.addWidget(export_group)
 
+        # ── Zip export ───────────────────────────────────────────
+        zip_group = QGroupBox('Export to Zip Archive')
+        zip_form = QFormLayout(zip_group)
+        self.zip_dest = QLineEdit()
+        self.zip_dest.setPlaceholderText('Output folder for the .zip file...')
+        browse_zip = QPushButton()
+        browse_zip.setIcon(_icon('folder'))
+        browse_zip.setIconSize(QSize(16, 16))
+        browse_zip.setToolTip('Browse for output folder')
+        browse_zip.clicked.connect(lambda: self._browse(self.zip_dest))
+        zip_row = QHBoxLayout()
+        zip_row.addWidget(self.zip_dest)
+        zip_row.addWidget(browse_zip)
+        zip_form.addRow('Output folder:', zip_row)
+        self.zip_name = QLineEdit()
+        self.zip_name.setPlaceholderText('export.zip')
+        zip_form.addRow('Archive name:', self.zip_name)
+        zip_btn = QPushButton('Create Zip Archive')
+        zip_btn.setIcon(_icon('package'))
+        zip_btn.setIconSize(QSize(16, 16))
+        zip_btn.clicked.connect(lambda: self._run('zip'))
+        zip_form.addRow('', zip_btn)
+        layout.addWidget(zip_group)
+
         # ── Resize ───────────────────────────────────────────────
         resize_group = QGroupBox('Resize Images')
         resize_form = QFormLayout(resize_group)
@@ -389,6 +426,20 @@ class BatchTab(QWidget):
         self.progress_bar.setVisible(True)
         self.cancel_btn.setVisible(True)
 
+        # For zip export: open the archive before the worker runs, close it after
+        if operation == 'zip':
+            zip_path = params.get('_zip_path', '')
+            try:
+                zf = zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED)
+                params['_zf'] = zf
+                self._zip_file = zf
+                self._zip_path = zip_path
+            except Exception as e:
+                QMessageBox.critical(self, 'Zip Error', f'Cannot create zip: {e}')
+                return
+        else:
+            self._zip_file = None
+
         self._worker = _BatchWorker(photos, operation, params)
         self._worker.progress.connect(lambda cur, tot, name: (
             self.progress_bar.setValue(cur),
@@ -411,6 +462,17 @@ class BatchTab(QWidget):
                 QMessageBox.warning(self, 'Export', 'Choose a destination folder.')
                 return None
             return {'dest_dir': d}
+        if operation == 'zip':
+            d = self.zip_dest.text().strip()
+            if not d:
+                QMessageBox.warning(self, 'Zip Export', 'Choose an output folder.')
+                return None
+            archive_name = self.zip_name.text().strip() or 'export.zip'
+            if not archive_name.lower().endswith('.zip'):
+                archive_name += '.zip'
+            zip_path = Path(d) / archive_name
+            Path(d).mkdir(parents=True, exist_ok=True)
+            return {'dest_dir': d, 'archive_name': archive_name, '_zip_path': str(zip_path)}
         if operation == 'resize':
             return {
                 'max_px': self.resize_max_px.value(),
@@ -428,6 +490,15 @@ class BatchTab(QWidget):
         return {}
 
     def _on_done(self, done: int, errors: int):
+        # Close zip archive if one was open
+        if getattr(self, '_zip_file', None):
+            try:
+                self._zip_file.close()
+                self.log_edit.append(f'Zip saved: {self._zip_path}')
+            except Exception as e:
+                self.log_edit.append(f'Error closing zip: {e}')
+            self._zip_file = None
+
         self.progress_bar.setVisible(False)
         self.cancel_btn.setVisible(False)
         msg = f'Done: {done} file(s) processed.'

@@ -833,6 +833,14 @@ class PhotoDatabase:
         )
         self.conn.commit()
 
+    def set_album_cover(self, album_id: int, photo_id: int) -> None:
+        """Set the cover photo for an album."""
+        self.cursor.execute(
+            'UPDATE albums SET cover_photo_id = ?, date_modified = CURRENT_TIMESTAMP WHERE id = ?',
+            (photo_id, album_id)
+        )
+        self.conn.commit()
+
     # --- Scheduled post helpers ---
     def schedule_post(self, photo_id, platform, caption, hashtags, scheduled_time, post_type='feed', status='pending', post_id=''):
         """Schedule a post for later"""

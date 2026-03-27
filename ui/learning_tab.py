@@ -1,6 +1,8 @@
 """
 AI Learning tab extracted from the monolithic main window.
 """
+from PyQt6.QtCore import QSize
+from core.icons import icon as _icon
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,7 +12,6 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QHeaderView,
     QAbstractItemView,
-    QMessageBox,
 )
 
 
@@ -35,6 +36,8 @@ class AILearningTab(QWidget):
 
         # Refresh button
         refresh_btn = QPushButton("Refresh Learning Data")
+        refresh_btn.setIcon(_icon('refresh'))
+        refresh_btn.setIconSize(QSize(16, 16))
         refresh_btn.clicked.connect(self.refresh_learning_data)
         layout.addWidget(refresh_btn)
 
@@ -52,18 +55,24 @@ class AILearningTab(QWidget):
         # Backup/Restore buttons
         backup_layout = QHBoxLayout()
 
-        backup_btn = QPushButton("📦 Backup Learning Data")
+        backup_btn = QPushButton("Backup Learning Data")
+        backup_btn.setIcon(_icon('package'))
+        backup_btn.setIconSize(QSize(16, 16))
         backup_btn.clicked.connect(self.manual_backup_learning_data)
         backup_layout.addWidget(backup_btn)
 
-        restore_btn = QPushButton("♻️ Restore from Backup")
+        restore_btn = QPushButton("Restore from Backup")
+        restore_btn.setIcon(_icon('revert'))
+        restore_btn.setIconSize(QSize(16, 16))
         restore_btn.clicked.connect(self.restore_learning_data)
         backup_layout.addWidget(restore_btn)
 
         layout.addLayout(backup_layout)
 
         # Clear learning button (with warning color)
-        clear_btn = QPushButton("⚠️ Clear All Learning Data")
+        clear_btn = QPushButton("Clear All Learning Data")
+        clear_btn.setIcon(_icon('trash', 16, '#ffffff'))
+        clear_btn.setIconSize(QSize(16, 16))
         clear_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; font-weight: bold; }")
         clear_btn.clicked.connect(self.clear_learning_data)
         layout.addWidget(clear_btn)
@@ -72,28 +81,52 @@ class AILearningTab(QWidget):
         self.refresh_learning_data()
 
     def refresh_learning_data(self):
-        """Refresh learning data display."""
+        """Query the DB for AI correction patterns and populate the table."""
+        self.learning_table.setSortingEnabled(False)
         self.learning_table.setRowCount(0)
-        if self.controller.statusBar():
-            self.controller.statusBar().showMessage("Learning data refreshed", 2000)
+        try:
+            corrections = self.controller.db.cursor.execute('''
+                SELECT
+                    field_name,
+                    original_value,
+                    corrected_value,
+                    COUNT(*) AS count,
+                    MAX(correction_date) AS last_date
+                FROM ai_corrections
+                WHERE original_value IS NOT NULL
+                  AND corrected_value IS NOT NULL
+                  AND original_value != corrected_value
+                GROUP BY field_name, original_value, corrected_value
+                ORDER BY count DESC, last_date DESC
+            ''').fetchall()
+
+            for field, orig, corrected, count, last_date in corrections:
+                row = self.learning_table.rowCount()
+                self.learning_table.insertRow(row)
+                from PyQt6.QtWidgets import QTableWidgetItem
+                self.learning_table.setItem(row, 0, QTableWidgetItem(field.replace('_', ' ').title()))
+                self.learning_table.setItem(row, 1, QTableWidgetItem(orig or 'unknown'))
+                self.learning_table.setItem(row, 2, QTableWidgetItem(corrected or ''))
+                self.learning_table.setItem(row, 3, QTableWidgetItem(str(count)))
+                self.learning_table.setItem(row, 4, QTableWidgetItem(last_date or ''))
+
+            if self.controller.statusBar():
+                self.controller.statusBar().showMessage(
+                    f'Loaded {len(corrections)} learned patterns', 2000
+                )
+        except Exception as e:
+            print(f'[AILearningTab] Error loading learning data: {e}')
+        finally:
+            self.learning_table.setSortingEnabled(True)
 
     def manual_backup_learning_data(self):
-        """Backup learning data."""
-        QMessageBox.information(self, "Backup", "Backup functionality not yet implemented")
+        """Delegate to MainWindow's full backup implementation."""
+        self.controller.manual_backup_learning_data()
 
     def restore_learning_data(self):
-        """Restore learning data from backup."""
-        QMessageBox.information(self, "Restore", "Restore functionality not yet implemented")
+        """Delegate to MainWindow's full restore implementation."""
+        self.controller.restore_learning_data()
 
     def clear_learning_data(self):
-        """Clear all learning data."""
-        reply = QMessageBox.question(
-            self,
-            "Clear Learning Data",
-            "Are you sure you want to clear all learned corrections? This cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            QMessageBox.information(self, "Cleared", "Learning data cleared")
-            self.refresh_learning_data()
+        """Delegate to MainWindow's full clear implementation."""
+        self.controller.clear_learning_data()

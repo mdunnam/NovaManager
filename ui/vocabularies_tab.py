@@ -1,6 +1,8 @@
 """
 Vocabularies tab extracted from the monolithic main window.
 """
+from PyQt6.QtCore import QSize
+from core.icons import icon as _icon
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -68,18 +70,26 @@ class VocabulariesTab(QWidget):
         toolbar.addWidget(self.vocab_input)
 
         add_btn = QPushButton("Add Value")
+        add_btn.setIcon(_icon('preset_add'))
+        add_btn.setIconSize(QSize(16, 16))
         add_btn.clicked.connect(self.add_vocabulary_value)
         toolbar.addWidget(add_btn)
 
         rename_btn = QPushButton("Rename Selected")
+        rename_btn.setIcon(_icon('rename'))
+        rename_btn.setIconSize(QSize(16, 16))
         rename_btn.clicked.connect(self.rename_vocabulary_value)
         toolbar.addWidget(rename_btn)
 
         delete_btn = QPushButton("Delete Selected")
+        delete_btn.setIcon(_icon('trash'))
+        delete_btn.setIconSize(QSize(16, 16))
         delete_btn.clicked.connect(self.delete_vocabulary_value)
         toolbar.addWidget(delete_btn)
 
         cleanup_btn = QPushButton("Clean Unused")
+        cleanup_btn.setIcon(_icon('eye_off'))
+        cleanup_btn.setIconSize(QSize(16, 16))
         cleanup_btn.clicked.connect(self.cleanup_vocabulary)
         toolbar.addWidget(cleanup_btn)
 
@@ -214,4 +224,4 @@ class VocabulariesTab(QWidget):
         description = item.text()
         
         field = self.vocab_field_selector.currentText()
-        self.controller.db.set_vocabulary_description(field, value, description)
+        self.controller.db.update_vocabulary_description(field, value, description)

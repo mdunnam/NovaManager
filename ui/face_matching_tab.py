@@ -29,8 +29,9 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QStyle,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPixmap, QIcon
+from core.icons import icon as _icon
 
 
 class FaceMatchingTab(QWidget):
@@ -96,15 +97,21 @@ class FaceMatchingTab(QWidget):
 
         benchmark_buttons = QHBoxLayout()
         add_benchmark_btn = QPushButton("Add Photos")
+        add_benchmark_btn.setIcon(_icon('add_photo'))
+        add_benchmark_btn.setIconSize(QSize(16, 16))
         add_benchmark_btn.clicked.connect(self.add_benchmark_photos)
         benchmark_buttons.addWidget(add_benchmark_btn)
 
         clear_benchmark_btn = QPushButton("Clear All")
+        clear_benchmark_btn.setIcon(_icon('trash'))
+        clear_benchmark_btn.setIconSize(QSize(16, 16))
         clear_benchmark_btn.clicked.connect(self.clear_benchmark_photos)
         benchmark_buttons.addWidget(clear_benchmark_btn)
         left_layout.addLayout(benchmark_buttons)
 
-        run_btn = QPushButton("🔍 Analyze All Photos")
+        run_btn = QPushButton("Analyze All Photos")
+        run_btn.setIcon(_icon('scan', 16, '#ffffff'))
+        run_btn.setIconSize(QSize(16, 16))
         run_btn.clicked.connect(self.run_analysis)
         run_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
         left_layout.addWidget(run_btn)
@@ -140,11 +147,15 @@ class FaceMatchingTab(QWidget):
         self.rating_filter.currentTextChanged.connect(self.apply_filter)
         filter_layout.addWidget(self.rating_filter)
 
-        flag_btn = QPushButton("🚩 Flag Selected with Rating")
+        flag_btn = QPushButton("Flag Selected with Rating")
+        flag_btn.setIcon(_icon('flag'))
+        flag_btn.setIconSize(QSize(16, 16))
         flag_btn.clicked.connect(self.flag_selected_photos)
         filter_layout.addWidget(flag_btn)
 
         clear_results_btn = QPushButton("Clear Results")
+        clear_results_btn.setIcon(_icon('close'))
+        clear_results_btn.setIconSize(QSize(16, 16))
         clear_results_btn.setToolTip("Reset face match ratings to unrated (0) and clear benchmark photos")
         clear_results_btn.clicked.connect(self.clear_results)
         filter_layout.addWidget(clear_results_btn)
@@ -367,16 +378,53 @@ class FaceMatchingTab(QWidget):
             QMessageBox.critical(self, "Error", f"Analysis failed: {str(e)}")
 
     def apply_filter(self):
-        """Apply rating filter to results table."""
-        # Placeholder: filter logic to be implemented
-        pass
+        """Filter results table by minimum star rating."""
+        filter_text = self.rating_filter.currentText()
+        min_rating = 0
+        show_unrated_only = False
+        if filter_text == '5 stars':
+            min_rating = 5
+        elif filter_text == '4-5 stars':
+            min_rating = 4
+        elif filter_text == '3-5 stars':
+            min_rating = 3
+        elif filter_text == '2-5 stars':
+            min_rating = 2
+        elif filter_text == '1-5 stars':
+            min_rating = 1
+        elif filter_text == 'Unrated':
+            show_unrated_only = True
+
+        for row in range(self.face_results_table.rowCount()):
+            rating_item = self.face_results_table.item(row, 3)
+            rating = rating_item.data(Qt.ItemDataRole.UserRole) if rating_item else 0
+            if show_unrated_only:
+                self.face_results_table.setRowHidden(row, rating != 0)
+            else:
+                self.face_results_table.setRowHidden(row, rating < min_rating)
 
     def flag_selected_photos(self):
-        """Flag selected photos with rating."""
-        rows = self.face_results_table.selectedIndexes()
-        if not rows:
-            QMessageBox.information(self, "No Selection", "Please select photos in the results table")
+        """Set flagged=True on selected photos and mark them in the results table."""
+        indexes = self.face_results_table.selectedIndexes()
+        if not indexes:
+            QMessageBox.information(self, 'No Selection', 'Please select photos in the results table')
             return
+
+        selected_rows = sorted(set(idx.row() for idx in indexes))
+        updated = 0
+        for row in selected_rows:
+            id_item = self.face_results_table.item(row, 0)
+            if not id_item:
+                continue
+            photo_id = int(id_item.text())
+            self.controller.db.update_photo(photo_id, flagged=True)
+            flag_item = self.face_results_table.item(row, 5)
+            if flag_item:
+                flag_item.setText('✓')
+            updated += 1
+
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(f'Flagged {updated} photo(s)', 2000)
 
     def load_face_similarity_results(self):
         """Load persisted analysis results from database."""
@@ -439,8 +487,18 @@ class FaceMatchingTab(QWidget):
             print(f"Error loading face similarity results: {e}")
 
     def open_photo_from_results(self):
-        """Open photo from results table in lightbox."""
-        pass
+        """Open the selected photo from the results table in the lightbox editor."""
+        selected = self.face_results_table.selectedIndexes()
+        if not selected:
+            return
+        row = selected[0].row()
+        id_item = self.face_results_table.item(row, 0)
+        if not id_item:
+            return
+        photo_id = int(id_item.text())
+        photo = self.controller.db.get_photo(photo_id)
+        if photo and hasattr(self.controller, 'show_full_image'):
+            self.controller.show_full_image(photo.get('filepath', ''), photo_id)
 
     def clear_results(self):
         """Clear all results and benchmarks."""

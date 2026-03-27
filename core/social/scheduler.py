@@ -22,6 +22,15 @@ def _get_api(platform: str, credentials: dict):
     if p in ('twitter', 'x'):
         from core.social.twitter_api import TwitterAPI
         return TwitterAPI(credentials)
+    if p == 'facebook':
+        from core.social.facebook_api import FacebookAPI
+        return FacebookAPI(credentials)
+    if p == 'pinterest':
+        from core.social.pinterest_api import PinterestAPI
+        return PinterestAPI(credentials)
+    if p == 'threads':
+        from core.social.threads_api import ThreadsAPI
+        return ThreadsAPI(credentials)
     return None
 
 

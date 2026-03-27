@@ -44,8 +44,12 @@ tests = [
     ("Pinterest API", "core.social.pinterest_api", "PinterestAPI"),
     ("Scheduler", "core.social.scheduler", "SchedulerWorker"),
     ("Threads API", "core.social.threads_api", "ThreadsAPI"),
+    ("TikTok API", "core.social.tiktok_api", "TikTokAPI"),
     ("Batch Tab", "ui.batch_tab", "BatchTab"),
     ("History Tab", "ui.history_tab", "HistoryTab"),
+    ("AI Learning Tab", "ui.learning_tab", "AILearningTab"),
+    ("Vocabularies Tab", "ui.vocabularies_tab", "VocabulariesTab"),
+    ("Face Matching Tab", "ui.face_matching_tab", "FaceMatchingTab"),
     ("Icon Library", "core.icons", "icon"),
 ]
 

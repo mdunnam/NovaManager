@@ -117,8 +117,28 @@ Return exactly this structure:
 Photo:"""
 
     try:
-        response = ollama.generate(
-            model='llava',
+        # Use Ollama URL and model from DB settings if available
+        ollama_host = None
+        ollama_model = 'llava'
+        if db:
+            try:
+                ai_cfg = db.get_credentials('ollama') or {}
+                if ai_cfg.get('url'):
+                    ollama_host = ai_cfg['url']
+                if ai_cfg.get('model'):
+                    ollama_model = ai_cfg['model']
+            except Exception:
+                pass
+
+        client_kwargs = {}
+        if ollama_host:
+            client_kwargs['host'] = ollama_host
+
+        import ollama as _ollama_mod
+        client = _ollama_mod.Client(**client_kwargs) if client_kwargs else ollama
+
+        response = client.generate(
+            model=ollama_model,
             prompt=prompt,
             images=[image_path],
             options={

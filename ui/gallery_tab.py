@@ -226,6 +226,8 @@ class GalleryTab(QWidget):
         self.exif_dims = QLabel('—')
         self.exif_size = QLabel('—')
         self.exif_gps = QLabel('—')
+        self.detail_colors = QLabel('—')
+        self.detail_rating = QLabel('—')
         for lbl, widget in [
             ('Camera:', self.exif_camera),
             ('Lens:', self.exif_lens),
@@ -237,6 +239,8 @@ class GalleryTab(QWidget):
             ('Dimensions:', self.exif_dims),
             ('File size:', self.exif_size),
             ('GPS:', self.exif_gps),
+            ('Colors:', self.detail_colors),
+            ('Rating:', self.detail_rating),
         ]:
             widget.setStyleSheet('font-size: 11px;')
             exif_layout.addRow(lbl, widget)
@@ -537,6 +541,10 @@ class GalleryTab(QWidget):
         lat = photo.get('exif_gps_lat')
         lon = photo.get('exif_gps_lon')
         self.exif_gps.setText(f'{lat:.5f}, {lon:.5f}' if lat and lon else '—')
+        self.detail_colors.setText(photo.get('dominant_colors') or '—')
+        rating = photo.get('content_rating') or ''
+        rating_labels = {'general': 'General (SFW)', 'mature': 'Mature', 'restricted': 'Restricted'}
+        self.detail_rating.setText(rating_labels.get(rating, rating or '—'))
 
     def save_details(self):
         if not self.current_gallery_photo_id:
