@@ -737,11 +737,49 @@ class PhotoDatabase:
         except Exception as e:
             print(f"Error retrieving posting history: {e}")
             return []
-            
+
+    def get_ai_corrections_summary(self) -> list:
+        """Return grouped AI correction patterns for the Learning tab."""
+        try:
+            self.cursor.execute('''
+                SELECT
+                    field_name,
+                    original_value,
+                    corrected_value,
+                    COUNT(*) AS count,
+                    MAX(correction_date) AS last_date
+                FROM ai_corrections
+                WHERE original_value IS NOT NULL
+                  AND corrected_value IS NOT NULL
+                  AND original_value != corrected_value
+                GROUP BY field_name, original_value, corrected_value
+                ORDER BY count DESC, last_date DESC
+            ''')
+            return [tuple(row) for row in self.cursor.fetchall()]
+        except Exception as e:
+            print(f"Error retrieving AI corrections: {e}")
+            return []
+
+    def clear_ai_corrections(self) -> bool:
+        """Delete all rows from the ai_corrections table."""
+        try:
+            self.cursor.execute('DELETE FROM ai_corrections')
             self.conn.commit()
             return True
-        except:
+        except Exception as e:
+            print(f"Error clearing AI corrections: {e}")
             return False
+
+    def save_app_setting(self, key: str, value: str) -> bool:
+        """Persist an application setting using the api_credentials table."""
+        return self.store_api_credentials(f'__setting__{key}', {'value': value})
+
+    def get_app_setting(self, key: str, default: str = '') -> str:
+        """Retrieve an application setting."""
+        creds = self.get_api_credentials(f'__setting__{key}')
+        if creds:
+            return creds.get('value', default)
+        return default
     
     def cleanup_unused_vocabulary(self, field_name):
         """Remove vocabulary values that are not used by any photo"""

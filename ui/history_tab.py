@@ -63,7 +63,7 @@ class _PostCard(QFrame):
         layout.addWidget(badge)
 
         # Date
-        dt = str(post.get('scheduled_time') or post.get('date_created') or '')[:16]
+        dt = str(post.get('date_posted') or '')[:16]
         date_lbl = QLabel(dt)
         date_lbl.setStyleSheet('font-size: 9px; color: #888;')
         date_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -152,7 +152,7 @@ class HistoryTab(QWidget):
                 item.widget().deleteLater()
 
         try:
-            posts = self.controller.db.get_scheduled_posts(status='sent')
+            posts = self.controller.db.get_posting_history()
         except Exception:
             posts = []
 
@@ -161,7 +161,7 @@ class HistoryTab(QWidget):
             posts = [p for p in posts if p.get('platform', '').lower() == platform_f]
 
         # Sort newest first
-        posts = sorted(posts, key=lambda p: str(p.get('scheduled_time') or ''), reverse=True)
+        posts = sorted(posts, key=lambda p: str(p.get('date_posted') or ''), reverse=True)
 
         cols = 5
         for idx, post in enumerate(posts):

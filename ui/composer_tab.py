@@ -9,23 +9,35 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QCheckBox, QGroupBox, QScrollArea, QGridLayout,
     QFrame, QSizePolicy, QDateTimeEdit, QMessageBox, QLineEdit,
-    QComboBox, QSplitter,
+    QComboBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
+    QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QSize, QDateTime
-from PyQt6.QtGui import QPixmap, QFont
+from PyQt6.QtGui import QPixmap, QFont, QColor
 from core.icons import icon as _icon
+
+# Per-platform caption character limits (0 = no hard limit)
+_CAPTION_LIMITS = {
+    'twitter':   280,
+    'instagram': 2200,
+    'facebook':  63206,
+    'pinterest': 500,
+    'threads':   500,
+    'tiktok':    2200,
+}
 
 
 class ComposerTab(QWidget):
     """Compose and publish/schedule posts to multiple platforms."""
 
-    _PLATFORMS = ['instagram', 'twitter', 'facebook', 'pinterest', 'threads']
+    _PLATFORMS = ['instagram', 'twitter', 'facebook', 'pinterest', 'threads', 'tiktok']
     _PLATFORM_LABELS = {
         'instagram': 'Instagram',
         'twitter': 'Twitter / X',
         'facebook': 'Facebook',
         'pinterest': 'Pinterest',
         'threads': 'Threads',
+        'tiktok': 'TikTok',
     }
 
     def __init__(self, controller):
@@ -33,6 +45,7 @@ class ComposerTab(QWidget):
         self.controller = controller
         self._selected_photo = None
         self._build_ui()
+        self.refresh_queue()
 
     def _build_ui(self):
         outer = QVBoxLayout(self)
@@ -76,10 +89,17 @@ class ComposerTab(QWidget):
         right_layout.setContentsMargins(8, 0, 0, 0)
 
         # Caption
-        right_layout.addWidget(QLabel('<b>Caption</b>'))
+        caption_header = QHBoxLayout()
+        caption_header.addWidget(QLabel('<b>Caption</b>'))
+        caption_header.addStretch()
+        self.char_counter = QLabel('')
+        self.char_counter.setStyleSheet('color: #aaa; font-size: 11px;')
+        caption_header.addWidget(self.char_counter)
+        right_layout.addLayout(caption_header)
         self.caption_edit = QTextEdit()
         self.caption_edit.setPlaceholderText('Write your caption here...')
         self.caption_edit.setMaximumHeight(120)
+        self.caption_edit.textChanged.connect(self._update_char_counter)
         right_layout.addWidget(self.caption_edit)
 
         # Hashtags
@@ -109,6 +129,7 @@ class ComposerTab(QWidget):
         self._platform_checks: dict[str, QCheckBox] = {}
         for p in self._PLATFORMS:
             cb = QCheckBox(self._PLATFORM_LABELS[p])
+            cb.toggled.connect(self._update_char_counter)
             platform_layout.addWidget(cb)
             self._platform_checks[p] = cb
         platform_layout.addStretch()
@@ -156,11 +177,44 @@ class ComposerTab(QWidget):
         self.result_label.setWordWrap(True)
         self.result_label.setStyleSheet('color: #aaa; font-size: 11px; padding-top: 4px;')
         right_layout.addWidget(self.result_label)
-        right_layout.addStretch()
+
+        # Duplicate warning
+        self.dupe_warning = QLabel('')
+        self.dupe_warning.setWordWrap(True)
+        self.dupe_warning.setStyleSheet('color: #e0a020; font-size: 11px;')
+        self.dupe_warning.setVisible(False)
+        right_layout.addWidget(self.dupe_warning)
 
         splitter.addWidget(right)
         splitter.setSizes([250, 550])
         outer.addWidget(splitter)
+
+        # Queue preview
+        queue_header = QHBoxLayout()
+        queue_header.addWidget(QLabel('<b>Pending Queue</b>'))
+        queue_header.addStretch()
+        self.queue_refresh_btn = QPushButton()
+        self.queue_refresh_btn.setIcon(_icon('refresh'))
+        self.queue_refresh_btn.setIconSize(QSize(14, 14))
+        self.queue_refresh_btn.setToolTip('Refresh queue')
+        self.queue_refresh_btn.clicked.connect(self.refresh_queue)
+        queue_header.addWidget(self.queue_refresh_btn)
+        outer.addLayout(queue_header)
+
+        self.queue_table = QTableWidget()
+        self.queue_table.setColumnCount(5)
+        self.queue_table.setHorizontalHeaderLabels(['Platform', 'Scheduled (UTC)', 'Status', 'Photo', 'Caption'])
+        self.queue_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.queue_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.queue_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.queue_table.horizontalHeader().setStretchLastSection(True)
+        self.queue_table.setAlternatingRowColors(True)
+        self.queue_table.setMaximumHeight(160)
+        outer.addWidget(self.queue_table)
+
+        self.queue_count_label = QLabel('')
+        self.queue_count_label.setStyleSheet('color: #aaa; font-size: 11px;')
+        outer.addWidget(self.queue_count_label)
 
     # ── Photo selection ──────────────────────────────────────────
 
@@ -206,10 +260,12 @@ class ComposerTab(QWidget):
             if photo.get('suggested_hashtags'):
                 self.hashtags_edit.setText(photo['suggested_hashtags'])
 
+        self._check_for_duplicates(photo['id'])
+        self.refresh_queue()
+
     def set_photo_for_post(self, photo: dict):
         """Called externally (e.g., from gallery right-click) to pre-select a photo."""
         self._set_photo(photo)
-        # Switch to composer tab in parent tabs widget
         try:
             tabs = self.parent()
             while tabs and not hasattr(tabs, 'setCurrentWidget'):
@@ -218,6 +274,95 @@ class ComposerTab(QWidget):
                 tabs.setCurrentWidget(self)
         except Exception:
             pass
+
+    # ── Character counter ────────────────────────────────────────
+
+    def _update_char_counter(self):
+        text = self.caption_edit.toPlainText()
+        length = len(text)
+        platforms = self._get_selected_platforms()
+        limits = [_CAPTION_LIMITS[p] for p in platforms if _CAPTION_LIMITS.get(p, 0) > 0]
+        if limits:
+            tightest = min(limits)
+            over = length - tightest
+            if over > 0:
+                self.char_counter.setText(f'{length} chars  ⚠ {over} over limit')
+                self.char_counter.setStyleSheet('color: #e53935; font-size: 11px;')
+            else:
+                self.char_counter.setText(f'{length} / {tightest}')
+                self.char_counter.setStyleSheet('color: #aaa; font-size: 11px;')
+        else:
+            self.char_counter.setText(f'{length} chars')
+            self.char_counter.setStyleSheet('color: #aaa; font-size: 11px;')
+
+    # ── Queue preview ────────────────────────────────────────────
+
+    def refresh_queue(self):
+        """Reload the pending queue table."""
+        _STATUS_COLORS = {'pending': '#e0a020', 'sent': '#4caf50', 'failed': '#e53935'}
+        try:
+            posts = self.controller.db.get_scheduled_posts()
+        except Exception:
+            return
+        pending = [p for p in posts if p.get('status') in ('pending', 'failed')]
+        self.queue_table.setRowCount(0)
+        for post in pending:
+            photo_name = ''
+            if post.get('photo_id'):
+                try:
+                    photo = self.controller.db.get_photo(post['photo_id'])
+                    if photo:
+                        photo_name = photo.get('filename', str(post['photo_id']))
+                except Exception:
+                    photo_name = str(post['photo_id'])
+            row = self.queue_table.rowCount()
+            self.queue_table.insertRow(row)
+            values = [
+                str(post.get('platform', '')).capitalize(),
+                str(post.get('scheduled_time', '')),
+                str(post.get('status', '')),
+                photo_name,
+                (post.get('caption') or '')[:60],
+            ]
+            for col, val in enumerate(values):
+                item = QTableWidgetItem(val)
+                if col == 2:
+                    color = _STATUS_COLORS.get(post.get('status', ''), '')
+                    if color:
+                        item.setForeground(QColor(color))
+                self.queue_table.setItem(row, col, item)
+        total = sum(1 for p in posts if p.get('status') == 'pending')
+        failed = sum(1 for p in posts if p.get('status') == 'failed')
+        parts = []
+        if total:
+            parts.append(f'{total} pending')
+        if failed:
+            parts.append(f'{failed} failed')
+        self.queue_count_label.setText(', '.join(parts) if parts else 'Queue empty')
+
+    # ── Duplicate check ──────────────────────────────────────────
+
+    def _check_for_duplicates(self, photo_id: int):
+        """Warn if this photo already has pending or recently sent posts."""
+        try:
+            posts = self.controller.db.get_scheduled_posts()
+        except Exception:
+            return
+        relevant = [
+            p for p in posts
+            if p.get('photo_id') == photo_id and p.get('status') in ('pending', 'sent')
+        ]
+        if not relevant:
+            self.dupe_warning.setVisible(False)
+            return
+        platforms = ', '.join(sorted({p.get('platform', '?').capitalize() for p in relevant}))
+        statuses = {p['status'] for p in relevant}
+        if 'pending' in statuses:
+            msg = f'⚠ This photo is already queued for: {platforms}'
+        else:
+            msg = f'This photo was already posted to: {platforms}'
+        self.dupe_warning.setText(msg)
+        self.dupe_warning.setVisible(True)
 
     # ── AI helpers ───────────────────────────────────────────────
 
@@ -283,6 +428,9 @@ class ComposerTab(QWidget):
                 elif platform == 'threads':
                     from core.social.threads_api import ThreadsAPI
                     api = ThreadsAPI(creds)
+                elif platform == 'tiktok':
+                    from core.social.tiktok_api import TikTokAPI
+                    api = TikTokAPI(creds)
                 else:
                     results.append(f'{platform}: not yet implemented')
                     continue
@@ -294,15 +442,15 @@ class ComposerTab(QWidget):
                 result = api.post_photo(filepath, caption, hashtags)
                 if result.success:
                     results.append(f'{platform}: posted! {result.url}')
-                    # Log to DB
-                    self.controller.db.schedule_post(
+                    # Log to posting history (permanent record)
+                    self.controller.db.log_post(
                         photo_id=self._selected_photo['id'],
                         platform=platform,
+                        post_type='post',
                         caption=caption,
-                        hashtags=','.join(hashtags),
-                        scheduled_time=datetime.utcnow().isoformat(),
-                        status='sent',
+                        post_url=result.url,
                         post_id=result.post_id,
+                        status='success',
                     )
                 else:
                     results.append(f'{platform}: failed — {result.error}')
@@ -312,6 +460,9 @@ class ComposerTab(QWidget):
         self.result_label.setText('\n'.join(results))
         if self.controller.statusBar():
             self.controller.statusBar().showMessage('Post attempt complete.', 4000)
+        self.refresh_queue()
+        if self._selected_photo:
+            self._check_for_duplicates(self._selected_photo['id'])
 
     def _schedule_post(self):
         if not self._validate():
@@ -342,6 +493,9 @@ class ComposerTab(QWidget):
         self.result_label.setText('Queued for: ' + ', '.join(added))
         if self.controller.statusBar():
             self.controller.statusBar().showMessage('Posts added to schedule queue.', 3000)
+        self.refresh_queue()
+        if self._selected_photo:
+            self._check_for_duplicates(self._selected_photo['id'])
 
     def _clear(self):
         self._selected_photo = None
@@ -351,5 +505,7 @@ class ComposerTab(QWidget):
         self.hashtags_edit.clear()
         self.photo_info_label.clear()
         self.result_label.clear()
+        self.dupe_warning.setVisible(False)
+        self.char_counter.setText('')
         for cb in self._platform_checks.values():
             cb.setChecked(False)

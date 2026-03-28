@@ -739,7 +739,7 @@ class PhotosTab(QWidget):
 
     def reanalyze_selected(self):
         """Trigger re-analysis of selected photos."""
-        from core.database import ReanalyzerThread
+        from nova_manager import ReanalyzerThread
 
         target_ids = self.get_target_photo_ids()
         if not target_ids:
@@ -787,11 +787,44 @@ class PhotosTab(QWidget):
         self.photo_table.clearSelection()
 
     def bulk_edit_cells(self):
-        """Open bulk edit dialog."""
+        """Open bulk edit dialog and persist changes to the database."""
         value, ok = QInputDialog.getText(self, "Bulk Edit", "Enter value for selected cells:")
-        if ok and value:
-            for index in self.photo_table.selectedIndexes():
-                self.photo_table.item(index.row(), index.column()).setText(value)
+        if not ok or not value:
+            return
+
+        self.photo_table.blockSignals(True)
+        updated_rows: set[int] = set()
+        for index in self.photo_table.selectedIndexes():
+            item = self.photo_table.item(index.row(), index.column())
+            if item:
+                item.setText(value)
+                updated_rows.add(index.row())
+        self.photo_table.blockSignals(False)
+
+        # Persist each changed row to the database via on_table_item_changed logic
+        field_map = {
+            self.COL_SCENE: "scene_type",
+            self.COL_MOOD: "mood",
+            self.COL_SUBJECTS: "subjects",
+            self.COL_LOCATION: "location",
+            self.COL_OBJECTS: "objects_detected",
+            self.COL_STATUS: "status",
+            self.COL_PACKAGE: "package_name",
+            self.COL_TAGS: "tags",
+            self.COL_NOTES: "notes",
+        }
+        cols_in_selection = {idx.column() for idx in self.photo_table.selectedIndexes()}
+        for row in updated_rows:
+            photo_id = self.get_photo_id_from_row(row)
+            if photo_id is None:
+                continue
+            updates = {}
+            for col in cols_in_selection:
+                field = field_map.get(col)
+                if field:
+                    updates[field] = value
+            if updates:
+                self.controller.db.update_photo_metadata(photo_id, updates)
 
     def get_target_photo_ids(self) -> list:
         """Get checked or selected photo IDs."""

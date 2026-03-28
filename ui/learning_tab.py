@@ -85,20 +85,7 @@ class AILearningTab(QWidget):
         self.learning_table.setSortingEnabled(False)
         self.learning_table.setRowCount(0)
         try:
-            corrections = self.controller.db.cursor.execute('''
-                SELECT
-                    field_name,
-                    original_value,
-                    corrected_value,
-                    COUNT(*) AS count,
-                    MAX(correction_date) AS last_date
-                FROM ai_corrections
-                WHERE original_value IS NOT NULL
-                  AND corrected_value IS NOT NULL
-                  AND original_value != corrected_value
-                GROUP BY field_name, original_value, corrected_value
-                ORDER BY count DESC, last_date DESC
-            ''').fetchall()
+            corrections = self.controller.db.get_ai_corrections_summary()
 
             for field, orig, corrected, count, last_date in corrections:
                 row = self.learning_table.rowCount()

@@ -6,7 +6,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QGridLayout, QFrame, QMessageBox, QProgressDialog,
-    QCheckBox, QSplitter, QGroupBox,
+    QCheckBox, QSplitter, QGroupBox, QRadioButton, QButtonGroup,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QPixmap, QColor
@@ -187,13 +187,13 @@ class DuplicatesTab(QWidget):
         size_lbl.setStyleSheet('font-size: 9px; color: #777;')
         cl.addWidget(size_lbl)
 
-        # Keep radio
-        keep_cb = QCheckBox('Keep this')
-        keep_cb.setChecked(self._keep_selections.get(group_idx) == photo['id'])
-        keep_cb.toggled.connect(
+        # Keep radio (exclusive per group via QButtonGroup stored on parent)
+        keep_rb = QRadioButton('Keep this')
+        keep_rb.setChecked(self._keep_selections.get(group_idx) == photo['id'])
+        keep_rb.toggled.connect(
             lambda checked, gi=group_idx, pid=photo['id']: self._set_keep(gi, pid, checked)
         )
-        cl.addWidget(keep_cb)
+        cl.addWidget(keep_rb)
 
         # Highlight if selected to keep
         if self._keep_selections.get(group_idx) == photo['id']:

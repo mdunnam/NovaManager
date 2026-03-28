@@ -80,9 +80,12 @@ def find_duplicates(photos: list, threshold: int = 8) -> list[list[dict]]:
 
     groups = [g for g in exact_groups.values() if len(g) > 1]
 
-    # Second pass: group remaining by perceptual hash similarity
+    # Second pass: group ALL photos by perceptual hash similarity
+    # (including those that have an MD5 hash but no exact match found)
     if _IMAGEHASH:
-        ungrouped = [p for p in no_md5 if p.get('perceptual_hash')]
+        # Build list of photos not already in an exact-match group
+        already_grouped_ids = {p['id'] for g in groups for p in g}
+        ungrouped = [p for p in photos if p.get('perceptual_hash') and p['id'] not in already_grouped_ids]
         used = set()
 
         for i, p1 in enumerate(ungrouped):

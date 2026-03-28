@@ -18,6 +18,8 @@ from PyQt6.QtGui import QPixmap, QIcon, QPainter, QColor, QFont, QImage, QPen, Q
 from core.icons import icon as _icon
 from pathlib import Path
 import os
+import math
+import time
 import hashlib
 import shutil
 import json
@@ -73,43 +75,6 @@ class PhotoPickerDialog(QDialog):
         self.selected_photo = None
         self.init_ui()
     
-    def _init_ui_legacy(self):
-        """Initialize the picker UI"""
-        layout = QVBoxLayout(self)
-
-        search_layout = QHBoxLayout()
-        search_layout.addWidget(QLabel("Search:"))
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Filter by type, status, tags...")
-        self.search_edit.textChanged.connect(self.refresh_gallery)
-        search_layout.addWidget(self.search_edit)
-        layout.addLayout(search_layout)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        self.gallery_container = QWidget()
-        self.gallery_layout = QGridLayout(self.gallery_container)
-        self.gallery_layout.setSpacing(10)
-        self.gallery_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        scroll.setWidget(self.gallery_container)
-        layout.addWidget(scroll)
-
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        select_btn = QPushButton("Select")
-        select_btn.setIcon(_icon('check'))
-        select_btn.setIconSize(QSize(16, 16))
-        select_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setIcon(_icon('close'))
-        cancel_btn.setIconSize(QSize(16, 16))
-        cancel_btn.clicked.connect(self.reject)
-        button_row.addWidget(select_btn)
-        button_row.addWidget(cancel_btn)
-        layout.addLayout(button_row)
-
-        self.refresh_gallery()
-
     def apply_scale(self):
         if self.base_pixmap.isNull():
             return
@@ -153,7 +118,6 @@ class PhotoPickerDialog(QDialog):
     def on_notes_text_changed(self):
         """Auto-save notes with a small delay to avoid excessive DB writes."""
         if self.auto_save_timer is None:
-            from PyQt6.QtCore import QTimer
             self.auto_save_timer = QTimer()
             self.auto_save_timer.setSingleShot(True)
             self.auto_save_timer.timeout.connect(self.save_notes)
@@ -205,9 +169,6 @@ class PhotoPickerDialog(QDialog):
         else:
             event.ignore()
     
-    def setModelData(self, editor, model, index):
-        """Save the selected value back to the model"""
-        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 
 class PackageManagerDialog(QDialog):
@@ -1558,7 +1519,6 @@ class AnnotatedImageCanvas(QWidget):
 
     def _draw_arrow(self, painter, x1, y1, x2, y2):
         painter.drawLine(x1, y1, x2, y2)
-        import math
         angle = math.atan2(y2 - y1, x2 - x1)
         size = max(8, int(self.pen_width * 2.4))
         left = (x2 - size * math.cos(angle - math.pi / 6), y2 - size * math.sin(angle - math.pi / 6))
@@ -1572,7 +1532,6 @@ class AnnotatedImageCanvas(QWidget):
 
     def _draw_arrow_on_image(self, painter, x1, y1, x2, y2):
         painter.drawLine(int(x1), int(y1), int(x2), int(y2))
-        import math
         angle = math.atan2(y2 - y1, x2 - x1)
         size = max(6, int(self.pen_width * 2.2))
         left = (x2 - size * math.cos(angle - math.pi / 6), y2 - size * math.sin(angle - math.pi / 6))
@@ -2600,27 +2559,13 @@ class ImageLightboxDialog(QDialog):
         project_hint.setStyleSheet("color: #888; font-size: 10px;")
         layer_layout.addWidget(project_hint)
 
-        layer_layout.addWidget(QLabel("Lighting Prompt (Coming Soon)"))
+        row14e = QHBoxLayout()
+        row14e.addWidget(QLabel("Lighting prompt:"))
+        layer_layout.addLayout(row14e)
         self.lighting_prompt_edit = QLineEdit()
-        self.lighting_prompt_edit.setPlaceholderText("Coming Soon")
-        self.lighting_prompt_edit.setEnabled(False)
+        self.lighting_prompt_edit.setPlaceholderText("Describe desired lighting...")
+        self.lighting_prompt_edit.textEdited.connect(self._save_lighting_prompt)
         layer_layout.addWidget(self.lighting_prompt_edit)
-
-        row_light = QHBoxLayout()
-        row_light.addWidget(QLabel("Relight Backend:"))
-        self.relight_backend_combo = QComboBox()
-        self.relight_backend_combo.addItems(["OpenAI", "Local Fallback"])
-        self.relight_backend_combo.setEnabled(False)
-        row_light.addWidget(self.relight_backend_combo)
-        apply_light_btn = QPushButton("Coming Soon")
-        apply_light_btn.setEnabled(False)
-        apply_light_btn.clicked.connect(self._save_lighting_prompt)
-        row_light.addWidget(apply_light_btn)
-        layer_layout.addLayout(row_light)
-
-        lighting_coming_soon = QLabel("Lighting tools are temporarily disabled.")
-        lighting_coming_soon.setStyleSheet("color: #9a9a9a;")
-        layer_layout.addWidget(lighting_coming_soon)
 
         legend = QLabel("Create custom layers and reorder them as needed")
         legend.setStyleSheet("color: #c8c8c8;")
@@ -2812,9 +2757,24 @@ class ImageLightboxDialog(QDialog):
         self._rebuild_layer_combo()
         self._refresh_layer_controls()
 
+    def _on_layer_list_item_changed(self, item):
+        """Handle layer list item text/check-state changes (e.g. inline rename)."""
+        if item is None:
+            return
+        # Visibility toggling is handled by eventFilter; name changes are managed
+        # by _rename_layer. This handler just ensures the canvas stays in sync.
+        layer_name = item.text()
+        if layer_name:
+            self._refresh_layer_controls()
+
     def _save_lighting_prompt(self):
-        QMessageBox.information(self, "Lighting Prompt", "Lighting tools are coming soon.")
-        return
+        """Persist the lighting prompt text for the active layer."""
+        layer = self._current_layer_name()
+        if not layer:
+            return
+        text = self.lighting_prompt_edit.text()
+        self.image_canvas.set_layer_lighting_prompt(layer, text)
+        self.image_canvas.save_annotations()
 
     def _cancel_relight_job(self):
         self._relight_cancelled = True
@@ -3005,6 +2965,8 @@ class ImageLightboxDialog(QDialog):
             self.layer_blend_combo.setCurrentIndex(idx)
         self.layer_blend_combo.blockSignals(False)
 
+        if not hasattr(self, 'lighting_prompt_edit'):
+            return
         self.lighting_prompt_edit.blockSignals(True)
         self.lighting_prompt_edit.setText(self.image_canvas.get_layer_lighting_prompt(layer))
         self.lighting_prompt_edit.blockSignals(False)
@@ -3017,9 +2979,6 @@ class ImageLightboxDialog(QDialog):
             return
         self.image_canvas.set_active_layer(self._layer_name_from_item(current))
         self._refresh_layer_controls()
-
-    def _on_layer_list_item_changed(self, item):
-        return
 
     def _on_layer_opacity_changed(self, value):
         layer = self._current_layer_name()
@@ -3712,9 +3671,8 @@ class AnalyzerThread(QThread):
 
             total = len(files)
             
-            import time
             start_time = time.time()
-            
+
             for i, filepath in enumerate(files):
                 if not self._is_running:
                     break
@@ -3834,7 +3792,6 @@ class ReanalyzerThread(QThread):
         db = PhotoDatabase(self.db_path)
         
         try:
-            import time
             start_time = time.time()
             total = len(self.photos_to_analyze)
             
@@ -3863,7 +3820,6 @@ class ReanalyzerThread(QThread):
                 self.progress.emit(i + 1, total, status)
                 
                 try:
-                    print(f"Re-analyzing photo ID {photo.get('id')}, filepath: {filepath}")
                     # Re-analyze with AI
                     metadata = analyze_image(filepath, db)
                     
@@ -3881,9 +3837,6 @@ class ReanalyzerThread(QThread):
                         db.update_photo_metadata(photo['id'], metadata)
                 
                 except Exception as e:
-                    import traceback
-                    error_details = traceback.format_exc()
-                    print(f"Error details:\n{error_details}")
                     self.error.emit(f"Error analyzing {filename}: {str(e)}")
             
             self.finished.emit()
@@ -3947,108 +3900,81 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setUsesScrollButtons(True)   # allow tab bar to scroll when window is narrow
         self.tabs.tabBar().setExpanding(False)  # don't stretch tabs to fill bar width
-        print('Tab widget created', file=sys.stderr)
         try:
             self.gallery_tab = GalleryTab(self)
             self.tabs.addTab(self.gallery_tab, "Gallery")
-            print('Gallery tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Gallery tab: {e}', file=sys.stderr)
         try:
             self.photos_tab = PhotosTab(self)
             self.tabs.addTab(self.photos_tab, "Library")
-            # Compatibility alias: legacy methods still reference self.photo_table.
             self.photo_table = self.photos_tab.photo_table
-            # Share persistent checked-selection state with PhotosTab helpers.
             self.persistent_selected_ids = self.photos_tab.persistent_selected_ids
-            print('Library tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Library tab: {e}', file=sys.stderr)
         try:
             self.filters_tab = FiltersTab(self)
             self.tabs.addTab(self.filters_tab, "Filters")
-            print('Filters tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Filters tab: {e}', file=sys.stderr)
         try:
             self.publish_tab = PublishTab(self)
             self.tabs.addTab(self.publish_tab, "Publish")
-            print('Publish tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Publish tab: {e}', file=sys.stderr)
         try:
             self.instagram_tab = InstagramTab(self)
             self.tabs.addTab(self.instagram_tab, "Instagram")
-            print('Instagram tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Instagram tab: {e}', file=sys.stderr)
         try:
             self.tiktok_tab = TikTokTab(self)
             self.tabs.addTab(self.tiktok_tab, "TikTok")
-            print('TikTok tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating TikTok tab: {e}', file=sys.stderr)
-
         try:
             self.albums_tab = AlbumsTab(self)
             self.tabs.addTab(self.albums_tab, "Albums")
-            print('Albums tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Albums tab: {e}', file=sys.stderr)
-
         try:
             self.composer_tab = ComposerTab(self)
             self.tabs.addTab(self.composer_tab, "Compose")
-            print('Composer tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Composer tab: {e}', file=sys.stderr)
-
         try:
             self.schedule_tab = ScheduleTab(self)
             self.tabs.addTab(self.schedule_tab, "Schedule")
-            print('Schedule tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Schedule tab: {e}', file=sys.stderr)
-
         try:
             self.duplicates_tab = DuplicatesTab(self)
             self.tabs.addTab(self.duplicates_tab, "Duplicates")
-            print('Duplicates tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Duplicates tab: {e}', file=sys.stderr)
-
         try:
             self.batch_tab = BatchTab(self)
             self.tabs.addTab(self.batch_tab, "Batch")
-            print('Batch tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Batch tab: {e}', file=sys.stderr)
-
         try:
             self.history_tab = HistoryTab(self)
             self.tabs.addTab(self.history_tab, "History")
-            print('History tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating History tab: {e}', file=sys.stderr)
-
         try:
             self.settings_tab = SettingsTab(self)
             self.tabs.addTab(self.settings_tab, "Settings")
-            print('Settings tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Settings tab: {e}', file=sys.stderr)
-
         try:
             self.learning_tab = AILearningTab(self)
             self.tabs.addTab(self.learning_tab, "AI Learning")
-            print('AI Learning tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
-
         try:
             self.vocabularies_tab = VocabulariesTab(self)
             self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
-            print('Vocabularies tab added', file=sys.stderr)
         except Exception as e:
             print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
 
@@ -4066,16 +3992,24 @@ class MainWindow(QMainWindow):
             def _get_creds(platform):
                 return self.db.get_credentials(platform) or {}
             self._scheduler_worker = SchedulerWorker(self.db.db_path, _get_creds)
-            self._scheduler_worker.post_sent.connect(
-                lambda post: self.statusBar().showMessage(
-                    f"Scheduled post sent to {post.get('platform', '?')}!", 5000
-                ) if self.statusBar() else None
-            )
-            self._scheduler_worker.post_failed.connect(
-                lambda post, err: self.statusBar().showMessage(
-                    f"Scheduled post failed ({post.get('platform', '?')}): {err}", 8000
-                ) if self.statusBar() else None
-            )
+            def _on_post_sent(post):
+                if self.statusBar():
+                    self.statusBar().showMessage(
+                        f"Scheduled post sent to {post.get('platform', '?')}!", 5000
+                    )
+                if hasattr(self, 'schedule_tab'):
+                    self.schedule_tab.refresh()
+
+            def _on_post_failed(post, err):
+                if self.statusBar():
+                    self.statusBar().showMessage(
+                        f"Scheduled post failed ({post.get('platform', '?')}): {err}", 8000
+                    )
+                if hasattr(self, 'schedule_tab'):
+                    self.schedule_tab.refresh()
+
+            self._scheduler_worker.post_sent.connect(_on_post_sent)
+            self._scheduler_worker.post_failed.connect(_on_post_failed)
             self._scheduler_worker.start()
             print('Scheduler worker started', file=sys.stderr)
         except Exception as e:
@@ -4937,8 +4871,7 @@ class MainWindow(QMainWindow):
         if last_folder:
             self.folder_input.setText(last_folder)
             # Defer watcher start until after the full UI is built
-            from PyQt6.QtCore import QTimer as _QTimer
-            _QTimer.singleShot(500, lambda: self._start_folder_watcher(last_folder) if last_folder and os.path.exists(last_folder) else None)
+            QTimer.singleShot(500, lambda: self._start_folder_watcher(last_folder) if last_folder and os.path.exists(last_folder) else None)
         
         # Options row
         options_row = QHBoxLayout()
@@ -4977,164 +4910,7 @@ class MainWindow(QMainWindow):
     def create_photos_tab(self):
         """Return the shared photos tab widget."""
         return self.photos_tab
-        
-        reanalyze_btn = QPushButton()
-        reanalyze_btn.setIcon(self.get_icon("reanalyze.png", "AI"))
-        reanalyze_btn.setIconSize(self.icon_size)
-        reanalyze_btn.setToolTip("Re-analyze selected photos with AI")
-        reanalyze_btn.clicked.connect(self.reanalyze_selected)
-        toolbar.addWidget(reanalyze_btn)
-        
-        train_ai_btn = QPushButton()
-        train_ai_btn.setIcon(self.get_icon("train.png", "T"))
-        train_ai_btn.setIconSize(self.icon_size)
-        train_ai_btn.setToolTip("Train AI: Re-analyze using learned corrections")
-        train_ai_btn.clicked.connect(self.reanalyze_selected)
-        toolbar.addWidget(train_ai_btn)
-        
-        toolbar.addStretch()
-        
-        # Batch actions
-        toolbar.addWidget(QLabel("Batch Actions:"))
-        self.batch_package = QLineEdit()
-        self.batch_package.setPlaceholderText("Package name...")
-        self.batch_package.setMaximumWidth(200)
-        toolbar.addWidget(self.batch_package)
-        
-        apply_package_btn = QPushButton("Set Package")
-        apply_package_btn.clicked.connect(self.apply_package)
-        toolbar.addWidget(apply_package_btn)
-        
-        toolbar.addStretch()
-        
-        # Thumbnail size toggle
-        self.thumbnail_sizes = {'off': 0, 'small': 50, 'medium': 100, 'large': 150}
-        self.current_thumb_size = 'medium'
-        self.thumb_btn = QPushButton(f"Thumbnails: {self.current_thumb_size.title()}")
-        self.thumb_btn.clicked.connect(self.toggle_thumbnail_size)
-        toolbar.addWidget(self.thumb_btn)
-        
-        layout.addLayout(toolbar)
-        
-        # Table
-        self.photo_table = QTableWidget()
-        self.photo_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        self.photo_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.photo_table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
-        
-        # Set columns (checkbox column 0 left intentionally blank for a master checkbox later)
-        columns = [
-            "", "ID", "Thumbnail", "Scene", "Mood", "Subjects",
-            "Location", "Objects", "Status",
-            "IG", "TikTok", "Package", "Tags", "Date Created", "Filepath", "Notes"
-        ]
-        self.photo_table.setColumnCount(len(columns))
-        self.photo_table.setHorizontalHeaderLabels(columns)
-        self.photo_table.setColumnWidth(0, 30)  # Checkbox column narrow
-        self.photo_table.setRowHeight(0, self.thumbnail_sizes[self.current_thumb_size])
-        self.photo_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.photo_table.setSortingEnabled(True)
-        
-        # Enable editing for checkboxes
-        self.photo_table.itemChanged.connect(self.on_table_item_changed)
-        # Open package folder on double-click
-        self.photo_table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
-        # Debug: log clicks to trace column/index issues
-        self.photo_table.cellClicked.connect(self.debug_log_cell_click)
-        # Notes pane removed from main UI; no row-click notes loader
-        # Enable middle-click handling on the table viewport (e.g., open file location from thumbnail)
-        self.photo_table.viewport().installEventFilter(self)
-        
-        layout.addWidget(self.photo_table)
-        
-        # Bottom toolbar with status dropdown
-        bottom_toolbar = QHBoxLayout()
-        
-        # Selection controls
-        select_all_btn = QPushButton("Select All")
-        select_all_btn.clicked.connect(self.select_all_photos)
-        bottom_toolbar.addWidget(select_all_btn)
-        
-        deselect_all_btn = QPushButton("Deselect All")
-        deselect_all_btn.clicked.connect(self.deselect_all_photos)
-        bottom_toolbar.addWidget(deselect_all_btn)
-        
-        bottom_toolbar.addStretch()
-        
-        # Bulk edit button
-        bulk_edit_btn = QPushButton("Bulk Edit Cells")
-        bulk_edit_btn.clicked.connect(self.bulk_edit_cells)
-        bottom_toolbar.addWidget(bulk_edit_btn)
-        
-        bottom_toolbar.addWidget(QLabel("Set Status for Selected:"))
-        
-        self.status_dropdown = QComboBox()
-        self.status_dropdown.addItems(["Unreviewed", "Editing", "Ready", "Published"])
-        bottom_toolbar.addWidget(self.status_dropdown)
-        
-        apply_status_btn = QPushButton("Apply Status")
-        apply_status_btn.clicked.connect(self.apply_status_to_selected)
-        bottom_toolbar.addWidget(apply_status_btn)
-        
-        bottom_toolbar.addStretch()
-        
-        # Staged platform toggles
-        bottom_toolbar.addWidget(QLabel("Toggle Staged:"))
 
-        staged_ig = QPushButton()
-        staged_ig.setIcon(self.get_icon("instagram.png", "IG"))
-        staged_ig.setIconSize(self.icon_size)
-        staged_ig.setToolTip("Stage to Instagram")
-        staged_ig.clicked.connect(lambda: self.toggle_staged("instagram"))
-        bottom_toolbar.addWidget(staged_ig)
-
-        staged_tiktok = QPushButton()
-        staged_tiktok.setIcon(self.get_icon("tiktok.png", "TT"))
-        staged_tiktok.setIconSize(self.icon_size)
-        staged_tiktok.setToolTip("Stage to TikTok")
-        staged_tiktok.clicked.connect(lambda: self.toggle_staged("tiktok"))
-        bottom_toolbar.addWidget(staged_tiktok)
-
-        # Unstage button (move back to root/<package>)
-        unstage_btn = QPushButton()
-        unstage_btn.setIcon(self.get_icon("unstage.png", "US"))
-        unstage_btn.setIconSize(self.icon_size)
-        unstage_btn.setToolTip("Unstage: move selected photos back to root/<package>")
-        unstage_btn.clicked.connect(self.unstage_selected)
-        bottom_toolbar.addWidget(unstage_btn)
-
-        # Package and Unpackage controls grouped
-        package_btn = QPushButton()
-        package_btn.setIcon(self.get_icon("package.png", "PK"))
-        package_btn.setIconSize(self.icon_size)
-        package_btn.setToolTip("Manage packages for selected photos")
-        package_btn.clicked.connect(self.manage_packages_dialog)
-        bottom_toolbar.addWidget(package_btn)
-
-        unpackage_btn = QPushButton()
-        unpackage_btn.setIcon(self.get_icon("unpackage.png", "UP"))
-        unpackage_btn.setIconSize(self.icon_size)
-        unpackage_btn.setToolTip("Unpackage: clear package and move files to root")
-        unpackage_btn.clicked.connect(self.unpackage_selected)
-        bottom_toolbar.addWidget(unpackage_btn)
-
-        # Release platform toggles
-        bottom_toolbar.addWidget(QLabel("Toggle Release:"))
-        
-        toggle_ig = QPushButton()
-        toggle_ig.setIcon(self.get_icon("instagram.png", "IG"))
-        toggle_ig.setIconSize(self.icon_size)
-        toggle_ig.setToolTip("Release: Instagram")
-        toggle_ig.clicked.connect(lambda: self.toggle_release_status("released_instagram"))
-        bottom_toolbar.addWidget(toggle_ig)
-        
-        toggle_tiktok = QPushButton()
-        toggle_tiktok.setIcon(self.get_icon("tiktok.png", "TT"))
-        toggle_tiktok.setIconSize(self.icon_size)
-        toggle_tiktok.setToolTip("Release: TikTok")
-        toggle_tiktok.clicked.connect(lambda: self.toggle_release_status("released_tiktok"))
-        bottom_toolbar.addWidget(toggle_tiktok)
-        
     def create_publish_tab(self):
         """Return the shared publish tab widget."""
         return self.publish_tab
@@ -5147,39 +4923,6 @@ class MainWindow(QMainWindow):
         """Return the shared TikTok tab widget."""
         return self.tiktok_tab
     
-    # Notes UI removed from main window; notes are managed in Lightbox and Library column
-
-    def create_gallery_tab(self):
-        """Return the shared gallery tab widget."""
-        return self.gallery_tab
-
-    def create_instagram_reel_tab(self):
-        """Instagram Reel tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Instagram Reels</b>"))
-        layout.addWidget(QLabel("Coming soon: Video upload and Reel-specific features"))
-        layout.addStretch()
-        return widget
-    
-    def create_instagram_story_tab(self):
-        """Instagram Story tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Instagram Stories</b>"))
-        layout.addWidget(QLabel("Coming soon: Story-specific formatting and ephemeral content"))
-        layout.addStretch()
-        return widget
-    
-    def create_instagram_highlights_tab(self):
-        """Instagram Highlights tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Instagram Highlights</b>"))
-        layout.addWidget(QLabel("Coming soon: Archive Stories as Highlights"))
-        layout.addStretch()
-        return widget
-
     def post_to_tiktok(self):
         """Post to TikTok"""
         if not hasattr(self, 'tt_selected_media_id'):
@@ -5269,35 +5012,9 @@ class MainWindow(QMainWindow):
         
         return widget
     
-    # Notes UI removed from main window; notes are managed in Lightbox and Library column
-
     def create_gallery_tab(self):
         """Return the shared gallery tab widget."""
         return self.gallery_tab
-
-    def add_benchmark_photos(self):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.add_benchmark_photos()
-
-    def clear_benchmark_photos(self):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.clear_benchmark_photos()
-
-    def save_benchmarks_to_settings(self):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.save_benchmarks_to_settings()
-
-    def load_benchmarks_from_settings(self):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.load_benchmarks_from_settings()
-
-    def render_benchmark_grid(self):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.render_benchmark_grid()
-
-    def delete_benchmark_path(self, path):
-        if hasattr(self, 'face_matching_tab') and self.face_matching_tab:
-            self.face_matching_tab.delete_benchmark_path(path)
 
     def get_photo_id_from_row(self, row: int) -> int:
         """Safely extract photo ID from table row using COL_ID constant"""
@@ -5618,416 +5335,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'photos_tab') and self.photos_tab:
             self.photos_tab.on_table_cell_double_clicked(row, col)
 
-    def clear_face_similarity_results(self):
-        """Clear all face match ratings (set to 0) and clear benchmark photos"""
-        reply = QMessageBox.question(
-            self,
-            "Clear Face Match Results",
-            "This will reset face match ratings to unrated (0) for all photos and clear benchmark photos. Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
-        photos = self.db.get_all_photos()
-        for p in photos:
-            self.db.update_photo_metadata(p['id'], {'face_similarity': 0})
-        
-        # Also clear benchmark photos
-        self.clear_benchmark_photos()
-        
-        self.load_face_similarity_results()
-        self.statusBar().showMessage("Cleared face match results and benchmark photos", 3000)
-    
-    def run_face_similarity_analysis(self):
-        """Run face similarity analysis on all photos"""
-        if not self.benchmark_photos:
-            QMessageBox.warning(self, "No Benchmarks", "Please add 5-10 reference photos first!")
-            return
-        
-        # Capture print output
-        import io
-        import sys
-        
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        sys.stdout = io.StringIO()
-        sys.stderr = sys.stdout
-        
-        try:
-            from deepface import DeepFace
-            import numpy as np
-        except ImportError:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Critical)
-            msg.setWindowTitle("Missing Library")
-            msg.setText("<b>DeepFace is required for face matching!</b>")
-            msg.setInformativeText("Run: pip install deepface")
-            msg.exec()
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-            return
-        
-        # Load benchmark embeddings
-        self.statusBar().showMessage("Loading benchmark faces...", 0)
-        QApplication.processEvents()
-        
-        self.face_log_output.clear()
-        log_text = "=== Face Matching Analysis ===\n"
-        self.face_log_output.setText(log_text)
-        
-        benchmark_embeddings = []
-        for benchmark_path in self.benchmark_photos:
-            try:
-                log_text += f"Loading: {Path(benchmark_path).name}\n"
-                self.face_log_output.setText(log_text)
-                QApplication.processEvents()
-                
-                rep = DeepFace.represent(
-                    img_path=benchmark_path,
-                    model_name="ArcFace",
-                    detector_backend="retinaface",
-                    enforce_detection=False
-                )
-                if rep:
-                    embedding = np.array(rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"])
-                    benchmark_embeddings.append(embedding)
-                    log_text += f"✓ Loaded: {Path(benchmark_path).name}\n"
-                else:
-                    log_text += f"⚠ No face found: {Path(benchmark_path).name}\n"
-                self.face_log_output.setText(log_text)
-                self.face_log_output.verticalScrollBar().setValue(
-                    self.face_log_output.verticalScrollBar().maximum()
-                )
-            except Exception as e:
-                log_text += f"✗ Error: {Path(benchmark_path).name}: {str(e)[:50]}\n"
-                self.face_log_output.setText(log_text)
-                self.face_log_output.verticalScrollBar().setValue(
-                    self.face_log_output.verticalScrollBar().maximum()
-                )
-        
-        if not benchmark_embeddings:
-            QMessageBox.critical(self, "No Faces Found", "Could not detect faces in any benchmark photos!")
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-            return
-        
-        log_text += f"\nAnalyzing {len(self.db.get_all_photos())} library photos...\n"
-        self.face_log_output.setText(log_text)
-        QApplication.processEvents()
-        
-        # Get all photos
-        photos = self.db.get_all_photos()
-        
-        # Progress dialog
-        progress = QProgressDialog(f"Analyzing {len(photos)} photos...", "Cancel", 0, len(photos), self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setMinimumDuration(0)
-        
-        # Analyze each photo
-        for i, photo in enumerate(photos):
-            if progress.wasCanceled():
-                break
-            
-            progress.setValue(i)
-            progress.setLabelText(f"Analyzing {photo['filename']}...")
-            QApplication.processEvents()
-            
-            try:
-                rep = DeepFace.represent(
-                    img_path=photo['filepath'],
-                    model_name="ArcFace",
-                    detector_backend="retinaface",
-                    enforce_detection=False
-                )
-                if rep:
-                    embedding = np.array(rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"])
-                    sims = []
-                    for bench in benchmark_embeddings:
-                        denom = (np.linalg.norm(embedding) * np.linalg.norm(bench))
-                        sim = float(np.dot(embedding, bench) / denom) if denom > 0 else 0.0
-                        sims.append(sim)
-                    avg_sim = np.mean(sims) if sims else 0.0
-                    
-                    # Map similarity to 1-5 rating (higher similarity = higher rating)
-                    if avg_sim >= 0.80:
-                        rating = 5
-                    elif avg_sim >= 0.70:
-                        rating = 4
-                    elif avg_sim >= 0.60:
-                        rating = 3
-                    elif avg_sim >= 0.50:
-                        rating = 2
-                    else:
-                        rating = 1
-                    
-                    self.db.update_photo_metadata(photo['id'], {'face_similarity': rating})
-                else:
-                    self.db.update_photo_metadata(photo['id'], {'face_similarity': 0})
-            
-            except Exception as e:
-                self.db.update_photo_metadata(photo['id'], {'face_similarity': 0})
-        
-        progress.setValue(len(photos))
-        log_text += f"✓ Analysis complete!\n"
-        self.face_log_output.setText(log_text)
-        
-        # Refresh results
-        self.load_face_similarity_results()
-        
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
-        
-        QMessageBox.information(self, "Analysis Complete", f"Analyzed {len(photos)} photos!\n\nUse the filter to view results.")
-    
-    def flag_selected_photos(self):
-        """Flag selected photos with their confidence ratings to metadata"""
-        selected_rows = self.face_results_table.selectedIndexes()
-        if not selected_rows:
-            QMessageBox.warning(self, "No Selection", "Please select photos to flag.")
-            return
-        
-        # Get unique rows
-        rows = set(index.row() for index in selected_rows)
-        flagged_count = 0
-        
-        for row in rows:
-            # Get photo ID from first column
-            id_item = self.face_results_table.item(row, 0)
-            if id_item:
-                photo_id = int(id_item.text())
-                # Get rating from stars column
-                rating_item = self.face_results_table.item(row, 3)
-                if rating_item:
-                    rating = rating_item.text().count("⭐")
-                    # Save to metadata
-                    self.db.update_photo_metadata(photo_id, {'face_similarity': rating})
-                    flagged_count += 1
-        
-        self.statusBar().showMessage(f"Flagged {flagged_count} photos with confidence ratings", 3000)
-        QMessageBox.information(self, "Flagged", f"Successfully flagged {flagged_count} photo(s) with their confidence ratings!")
-
-        """Run face similarity analysis on all photos"""
-        if not self.benchmark_photos:
-            QMessageBox.warning(self, "No Benchmarks", "Please add 5-10 reference photos first!")
-            return
-        
-        if len(self.benchmark_photos) < 3:
-            reply = QMessageBox.question(
-                self,
-                "Few Benchmarks",
-                f"You only have {len(self.benchmark_photos)} benchmark photo(s). For best results, use 5-10 photos.\n\nContinue anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
-        
-        # Import DeepFace matcher
-        try:
-            from deepface import DeepFace
-            import numpy as np
-        except ImportError:
-            QMessageBox.critical(
-                self,
-                "Missing Library",
-                "DeepFace is required for face matching.\n\nRun: pip install deepface"
-            )
-            return
-        
-        # Load benchmark embeddings
-        self.statusBar().showMessage("Loading benchmark faces...", 0)
-        QApplication.processEvents()
-        
-        benchmark_embeddings = []
-        for benchmark_path in self.benchmark_photos:
-            try:
-                rep = DeepFace.represent(
-                    img_path=benchmark_path,
-                    model_name="ArcFace",
-                    detector_backend="retinaface",
-                    enforce_detection=False
-                )
-                if rep:
-                    embedding = np.array(rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"])
-                    benchmark_embeddings.append(embedding)
-                    print(f"✓ Loaded face from: {Path(benchmark_path).name}")
-                else:
-                    print(f"⚠ No face found in benchmark: {Path(benchmark_path).name}")
-            except Exception as e:
-                print(f"✗ Error loading benchmark {Path(benchmark_path).name}: {e}")
-        
-        if not benchmark_embeddings:
-            QMessageBox.critical(self, "No Faces Found", "Could not detect faces in any benchmark photos!")
-            return
-        
-        # Get all photos
-        photos = self.db.get_all_photos()
-        
-        # Progress dialog
-        progress = QProgressDialog(f"Analyzing {len(photos)} photos...", "Cancel", 0, len(photos), self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setMinimumDuration(0)
-        
-        # Analyze each photo
-        for i, photo in enumerate(photos):
-            if progress.wasCanceled():
-                break
-            
-            progress.setValue(i)
-            progress.setLabelText(f"Analyzing {photo['filename']}...")
-            QApplication.processEvents()
-            
-            try:
-                rep = DeepFace.represent(
-                    img_path=photo['filepath'],
-                    model_name="ArcFace",
-                    detector_backend="retinaface",
-                    enforce_detection=False
-                )
-                if rep:
-                    embedding = np.array(rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"])
-                    sims = []
-                    for bench in benchmark_embeddings:
-                        denom = (np.linalg.norm(embedding) * np.linalg.norm(bench))
-                        sim = float(np.dot(embedding, bench) / denom) if denom > 0 else 0.0
-                        sims.append(sim)
-                    avg_sim = np.mean(sims) if sims else 0.0
-                    
-                    # Map similarity to 1-5 rating (higher similarity = higher rating)
-                    if avg_sim >= 0.80:
-                        rating = 5
-                    elif avg_sim >= 0.70:
-                        rating = 4
-                    elif avg_sim >= 0.60:
-                        rating = 3
-                    elif avg_sim >= 0.50:
-                        rating = 2
-                    else:
-                        rating = 1
-                    
-                    self.db.update_photo_metadata(photo['id'], {'face_similarity': rating})
-                    print(f"Photo {photo['id']}: Rating {rating}/5 (similarity: {avg_sim:.3f})")
-                else:
-                    self.db.update_photo_metadata(photo['id'], {'face_similarity': 0})
-            
-            except Exception as e:
-                print(f"Error analyzing {photo['filename']}: {e}")
-                self.db.update_photo_metadata(photo['id'], {'face_similarity': 0})
-        
-        progress.setValue(len(photos))
-        self.statusBar().showMessage("Face similarity analysis complete!", 3000)
-        
-        # Refresh results
-        self.load_face_similarity_results()
-        QMessageBox.information(self, "Analysis Complete", f"Analyzed {len(photos)} photos!\n\nUse the filter to view results.")
-    
-    def load_face_similarity_results(self):
-        """Load face similarity results into table"""
-        self.face_results_table.setRowCount(0)
-        
-        photos = self.db.get_all_photos()
-        
-        for photo in photos:
-            rating = photo.get('face_similarity', 0)
-            if rating > 0:  # Only show rated photos
-                row = self.face_results_table.rowCount()
-                self.face_results_table.insertRow(row)
-                self.face_results_table.setRowHeight(row, 60)
-                
-                # ID
-                id_item = QTableWidgetItem(str(photo['id']))
-                id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.face_results_table.setItem(row, 0, id_item)
-                
-                # Thumbnail
-                thumb_label = QLabel()
-                thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                try:
-                    from pathlib import Path
-                    filepath = Path(photo['filepath'])
-                    # Try thumbnail cache first
-                    thumb_path = Path("H:\\NovaApp\\thumbnail_cache") / f"{filepath.stem}_thumb.jpg"
-                    if not thumb_path.exists():
-                        # Fall back to actual image file
-                        thumb_path = filepath
-                    
-                    if thumb_path.exists():
-                        pixmap = QPixmap(str(thumb_path)).scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        if not pixmap.isNull():
-                            thumb_label.setPixmap(pixmap)
-                except Exception as e:
-                    print(f"Thumbnail error: {e}")
-                
-                self.face_results_table.setCellWidget(row, 1, thumb_label)
-                
-                # Filename
-                filename_item = QTableWidgetItem(photo['filename'])
-                filename_item.setFlags(filename_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.face_results_table.setItem(row, 2, filename_item)
-                
-                # Rating (stars)
-                stars = "⭐" * rating
-                rating_item = QTableWidgetItem(stars)
-                rating_item.setFlags(rating_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                rating_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.face_results_table.setItem(row, 3, rating_item)
-                
-                # Confidence
-                confidence = ["", "Low", "Fair", "Good", "Very Good", "Excellent"][rating]
-                conf_item = QTableWidgetItem(confidence)
-                conf_item.setFlags(conf_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.face_results_table.setItem(row, 4, conf_item)
-                
-                # Flag checkbox
-                flag_checkbox = QCheckBox()
-                flag_checkbox.setProperty("photo_id", photo['id'])
-                flag_cell = QTableWidgetItem()
-                flag_cell.setFlags(flag_cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.face_results_table.setItem(row, 5, flag_cell)
-                self.face_results_table.setCellWidget(row, 5, flag_checkbox)
-    
-    def apply_face_similarity_filter(self):
-        """Filter results by rating"""
-        filter_text = self.rating_filter.currentText()
-        
-        for row in range(self.face_results_table.rowCount()):
-            rating_item = self.face_results_table.item(row, 3)
-            if rating_item:
-                star_count = rating_item.text().count("⭐")
-                
-                show = False
-                if filter_text == "All":
-                    show = True
-                elif filter_text == "5 stars":
-                    show = star_count == 5
-                elif filter_text == "4-5 stars":
-                    show = star_count >= 4
-                elif filter_text == "3-5 stars":
-                    show = star_count >= 3
-                elif filter_text == "2-5 stars":
-                    show = star_count >= 2
-                elif filter_text == "1-5 stars":
-                    show = star_count >= 1
-                
-                self.face_results_table.setRowHidden(row, not show)
-    
-    def open_photo_from_face_results(self, index):
-        """Open photo location when double-clicked in face results"""
-        row = index.row()
-        photo_id = int(self.face_results_table.item(row, 0).text())
-        
-        # Switch to Library tab and select the photo
-        self.tabs.setCurrentIndex(1)
-        
-        # Find and select the photo in the main table
-        for i in range(self.photo_table.rowCount()):
-            if int(self.photo_table.item(i, 0).text()) == photo_id:
-                self.photo_table.selectRow(i)
-                self.photo_table.scrollToItem(self.photo_table.item(i, 0))
-                break
-    
     def refresh_learning_data(self):
         """Refresh the AI learning data display — delegates to AILearningTab."""
         if hasattr(self, 'learning_tab'):
@@ -6057,17 +5364,17 @@ class MainWindow(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                self.db.cursor.execute('DELETE FROM ai_corrections')
-                self.db.conn.commit()
-                self.refresh_learning_data()
-                self.statusBar().showMessage("Learning data cleared (backup created)", 3000)
+                if self.db.clear_ai_corrections():
+                    self.refresh_learning_data()
+                    self.statusBar().showMessage("Learning data cleared (backup created)", 3000)
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to clear learning data")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to clear learning data: {e}")
     
     def backup_learning_data(self):
         """Backup learning data to a backup table"""
         try:
-            from datetime import datetime
             backup_table = f"ai_corrections_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
             # Create backup table
@@ -6196,119 +5503,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Restore Failed", f"Failed to restore backup: {e}")
             import traceback
             traceback.print_exc()
-    
-    def load_vocabulary_for_field(self, field_name):
-        """Load vocabulary values for selected field"""
-        self.vocab_list.blockSignals(True)
-        self.vocab_list.setRowCount(0)
-        
-        vocab_with_desc = self.db.get_vocabulary(field_name, include_descriptions=True)
-        
-        for value, description in vocab_with_desc:
-            # Count usage
-            self.db.cursor.execute(
-                f'SELECT COUNT(*) FROM photos WHERE {field_name} = ?',
-                (value,)
-            )
-            count = self.db.cursor.fetchone()[0]
-            
-            row = self.vocab_list.rowCount()
-            self.vocab_list.insertRow(row)
-            
-            value_item = QTableWidgetItem(value)
-            value_item.setFlags(value_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.vocab_list.setItem(row, 0, value_item)
-            
-            desc_item = QTableWidgetItem(description or '')
-            self.vocab_list.setItem(row, 1, desc_item)
-            
-            count_item = QTableWidgetItem(str(count))
-            count_item.setFlags(count_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.vocab_list.setItem(row, 2, count_item)
-        
-        self.vocab_list.blockSignals(False)
-    
-    def on_vocab_description_changed(self, item):
-        """Handle when description is edited"""
-        if item.column() != 1:  # Only description column
-            return
-        
-        row = item.row()
-        value = self.vocab_list.item(row, 0).text()
-        description = item.text()
-        field = self.vocab_field_selector.currentText()
-        
-        self.db.update_vocabulary_description(field, value, description)
-        self.statusBar().showMessage(f"Updated description for '{value}'", 2000)
-    
-    def add_vocabulary_value(self):
-        """Add new vocabulary value"""
-        value = self.vocab_input.text().strip().lower()
-        if not value:
-            return
-        
-        field = self.vocab_field_selector.currentText()
-        if self.db.add_vocabulary_value(field, value):
-            self.load_vocabulary_for_field(field)
-            self.vocab_input.clear()
-            self.statusBar().showMessage(f"Added '{value}' to {field}", 2000)
-        else:
-            QMessageBox.warning(self, "Error", f"Value '{value}' already exists or invalid")
-    
-    def rename_vocabulary_value(self):
-        """Rename selected vocabulary value"""
-        selected = self.vocab_list.selectedItems()
-        if not selected:
-            QMessageBox.information(self, "No Selection", "Please select a value to rename")
-            return
-        
-        old_value = self.vocab_list.item(selected[0].row(), 0).text()
-        field = self.vocab_field_selector.currentText()
-        
-        new_value, ok = QInputDialog.getText(
-            self, "Rename Value",
-            f"Rename '{old_value}' to:",
-            text=old_value
-        )
-        
-        if ok and new_value.strip():
-            if self.db.rename_vocabulary_value(field, old_value, new_value.strip().lower()):
-                self.load_vocabulary_for_field(field)
-                self.refresh_photos()  # Refresh table to show updated values
-                self.statusBar().showMessage(f"Renamed '{old_value}' to '{new_value}'", 2000)
-            else:
-                QMessageBox.warning(self, "Error", "Failed to rename value")
-    
-    def delete_vocabulary_value(self):
-        """Delete selected vocabulary value"""
-        selected = self.vocab_list.selectedItems()
-        if not selected:
-            QMessageBox.information(self, "No Selection", "Please select a value to delete")
-            return
-        
-        value = self.vocab_list.item(selected[0].row(), 0).text()
-        count = int(self.vocab_list.item(selected[0].row(), 1).text())
-        
-        if count > 0:
-            reply = QMessageBox.question(
-                self, "Confirm Delete",
-                f"'{value}' is used by {count} photo(s). Delete anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        
-        field = self.vocab_field_selector.currentText()
-        self.db.remove_vocabulary_value(field, value)
-        self.load_vocabulary_for_field(field)
-        self.statusBar().showMessage(f"Deleted '{value}' from {field}", 2000)
-    
-    def cleanup_vocabulary(self):
-        """Remove unused vocabulary values"""
-        field = self.vocab_field_selector.currentText()
-        self.db.cleanup_unused_vocabulary(field)
-        self.load_vocabulary_for_field(field)
-        self.statusBar().showMessage(f"Cleaned unused values from {field}", 2000)
     
     def setup_table_delegates(self):
         """Setup dropdown delegates for table columns using controlled vocabularies"""
@@ -7127,7 +6321,6 @@ class MainWindow(QMainWindow):
                         photo = self.db.get_photo(photo_id)
                         original_value = photo.get(field_name)
                         if original_value and original_value != text:
-                            print(f"Saving correction for photo {photo_id}, {field_name}: '{original_value}' -> '{text}'")
                             self.db.save_correction(photo_id, field_name, original_value, text)
                     
                     self.db.update_photo_metadata(photo_id, {field_name: text})
@@ -7204,26 +6397,16 @@ class MainWindow(QMainWindow):
     
     def reanalyze_selected(self):
         """Re-analyze selected photos using AI with learned corrections"""
-        print("=== REANALYZE SELECTED CALLED ===")
         target_ids = list(self.get_target_photo_ids())
-        print(f"Target IDs: {target_ids}")
         if not target_ids:
             QMessageBox.information(self, "No Selection", "Please check photos to re-analyze (or select cells)")
             return
         photos_to_analyze = []
         for photo_id in target_ids:
-            print(f"Getting photo ID: {photo_id}")
             photo = self.db.get_photo(photo_id)
-            print(f"Photo data: {photo}")
             if photo and photo.get('filepath'):
                 photos_to_analyze.append(photo)
-            else:
-                print(f"WARNING: Photo {photo_id} has no filepath!")
-        
-        print(f"Total photos to analyze: {len(photos_to_analyze)}")
-        
         if not photos_to_analyze:
-            print("No photos to analyze, returning")
             return
         
         # Simple synchronous version
@@ -7319,11 +6502,6 @@ class MainWindow(QMainWindow):
         if self.analyzer_thread and self.analyzer_thread.isRunning():
             self.analyzer_thread.stop()
             self.statusBar().showMessage('Cancelling analysis...', 3000)
-            self.cancel_btn.setEnabled(False)
-            self.analyze_btn.setEnabled(True)
-        elif hasattr(self, 'reanalyzer_thread') and self.reanalyzer_thread and self.reanalyzer_thread.isRunning():
-            self.reanalyzer_thread.stop()
-            self.statusBar().showMessage('Cancelling re-analysis...', 3000)
             self.cancel_btn.setEnabled(False)
             self.analyze_btn.setEnabled(True)
     

@@ -269,6 +269,14 @@ class SettingsTab(QWidget):
             self.ollama_model.setText(ai.get('model', ''))
         except Exception:
             pass
+        # Watch folder settings
+        try:
+            folder = self.controller.db.get_app_setting('watch_folder', '')
+            interval = self.controller.db.get_app_setting('watcher_interval', '30')
+            self.watch_folder_edit.setText(folder)
+            self.watcher_interval_spin.setValue(int(interval) if interval.isdigit() else 30)
+        except Exception:
+            pass
 
     def _save(self, platform_key: str):
         card = self._cards[platform_key]
@@ -373,6 +381,15 @@ class SettingsTab(QWidget):
         if not folder:
             QMessageBox.warning(self, 'Folder Watcher', 'Enter a folder path first.')
             return
+
+        # Persist settings so they survive restart
+        try:
+            self.controller.db.save_app_setting('watch_folder', folder)
+            self.controller.db.save_app_setting(
+                'watcher_interval', str(self.watcher_interval_spin.value())
+            )
+        except Exception:
+            pass
 
         try:
             from core.folder_watcher import FolderWatcher
