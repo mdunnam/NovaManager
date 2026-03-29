@@ -288,17 +288,6 @@ class AlbumsTab(QWidget):
 
         def matches(photo: dict) -> bool:
             for clause in clauses:
-                if '=' not in clause:
-                    if clause == 'status=raw' and (photo.get('status') or '').lower() != 'raw':
-                        return False
-                    if clause == 'status=needs_edit' and (photo.get('status') or '').lower() != 'needs_edit':
-                        return False
-                    if clause == 'status=ready' and (photo.get('status') or '').lower() != 'ready':
-                        return False
-                    if clause == 'status=released' and 'released' not in (photo.get('status') or '').lower():
-                        return False
-                    continue
-
                 key, value = clause.split('=', 1)
                 value = value.strip().lower()
                 if key == 'scene' and (photo.get('scene_type') or '').lower() != value:
@@ -309,6 +298,13 @@ class AlbumsTab(QWidget):
                     return False
                 if key == 'quality' and (photo.get('quality') or '').lower() != value:
                     return False
+                if key == 'status':
+                    pstatus = (photo.get('status') or '').lower()
+                    if value == 'released':
+                        if 'released' not in pstatus:
+                            return False
+                    elif pstatus != value:
+                        return False
                 if key == 'content_rating' and (photo.get('content_rating') or '').lower() != value:
                     return False
                 if key == 'tag' and value not in (photo.get('tags') or '').lower():

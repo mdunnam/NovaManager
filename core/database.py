@@ -397,6 +397,13 @@ class PhotoDatabase:
         
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_rated_face_match_photos(self):
+        """Get photos with a face-match rating > 0."""
+        self.cursor.execute(
+            'SELECT * FROM photos WHERE face_match_rating > 0 ORDER BY face_match_rating DESC, id DESC'
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
     
     def bulk_update(self, photo_ids, updates):
         """Bulk update multiple photos"""

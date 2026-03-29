@@ -304,8 +304,7 @@ class GalleryTab(QWidget):
         else:
             self.refresh_with_photos(self._all_photos)
 
-    def refresh_with_photos(self, photos):
-        self._display_photos = list(photos)
+    def refresh_with_photos(self, photos, preserve_limit: bool = False):
         self._thumbnail_frames = {}
         while self.gallery_grid.count():
             item = self.gallery_grid.takeAt(0)
@@ -327,6 +326,9 @@ class GalleryTab(QWidget):
         elif sort_by == 'Scene':
             photos = sorted(photos, key=lambda p: p.get('scene_type') or '')
 
+        # Pagination must use the same sorted order that is rendered.
+        self._display_photos = list(photos)
+
         size_map = {'Small': 140, 'Medium': 190, 'Large': 240}
         self._current_thumb_size = size_map[self.gallery_size.currentText()]
 
@@ -335,7 +337,10 @@ class GalleryTab(QWidget):
         self._current_columns = max(1, scroll_width // cell_width)
 
         group_by = self.gallery_group.currentText()
-        self._render_limit = self.PAGE_SIZE
+        if preserve_limit and self._rendered_count > 0:
+            self._render_limit = max(self.PAGE_SIZE, self._rendered_count)
+        else:
+            self._render_limit = self.PAGE_SIZE
         self._render_current_page(group_by)
 
     def _render_current_page(self, group_by: str):
@@ -420,9 +425,18 @@ class GalleryTab(QWidget):
         if self._all_photos:
             q = self.search_edit.text().strip()
             if q:
-                self._on_search(q)
+                ql = q.lower()
+                filtered = [
+                    p for p in self._all_photos
+                    if any(ql in str(p.get(f) or '').lower() for f in (
+                        'filename', 'ai_caption', 'suggested_hashtags', 'tags',
+                        'objects_detected', 'location', 'subjects', 'scene_type',
+                        'mood', 'notes', 'exif_camera',
+                    ))
+                ]
+                self.refresh_with_photos(filtered, preserve_limit=True)
             else:
-                self.refresh_with_photos(self._all_photos)
+                self.refresh_with_photos(self._all_photos, preserve_limit=True)
 
     # ── Thumbnail creation ───────────────────────────────────────
 

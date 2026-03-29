@@ -80,7 +80,7 @@ class _AnalysisWorker(QThread):
                 self.progress.emit(idx, total)
             except Exception as e:
                 self.log.emit(f'[WARN] {os.path.basename(filepath)}: {e}')
-            self.finished.emit(analyzed, rated, cancelled)
+        self.finished.emit(analyzed, rated, cancelled)
 
 
 class FaceMatchingTab(QWidget):
@@ -496,8 +496,7 @@ class FaceMatchingTab(QWidget):
     def load_face_similarity_results(self):
         """Load only rated photos from the DB — avoids loading the entire library just to filter."""
         try:
-            all_photos = self.controller.db.get_all_photos()
-            rated_photos = [p for p in all_photos if p.get('face_match_rating', 0) > 0]
+            rated_photos = self.controller.db.get_rated_face_match_photos()
             
             self.face_results_table.setRowCount(0)
             self.face_results_table.setSortingEnabled(False)
@@ -615,6 +614,15 @@ class FaceMatchingTab(QWidget):
     
     def _on_matcher_changed(self):
         """Handle face matcher selection change."""
+        if self.matcher_combo.currentData() == "deepface" and not DEEPFACE_AVAILABLE:
+            QMessageBox.warning(
+                self,
+                "DeepFace Unavailable",
+                "DeepFace is not installed in this environment. Falling back to OpenCV.",
+            )
+            self.matcher_combo.blockSignals(True)
+            self.matcher_combo.setCurrentIndex(0)
+            self.matcher_combo.blockSignals(False)
         self._initialize_matcher()
         if self.controller.statusBar():
             matcher_name = self.matcher_combo.currentText()
