@@ -25,6 +25,8 @@ _QUALITY_BADGE = {
 class GalleryTab(QWidget):
     """Gallery grid with detail panel and search."""
 
+    PAGE_SIZE = 200  # thumbnails rendered per page
+
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
@@ -32,6 +34,10 @@ class GalleryTab(QWidget):
         self.selected_gallery_photo_id = None
         self._thumbnail_frames = {}
         self._all_photos = []
+        self._pending_photos = []   # photos not yet rendered (pagination)
+        self._rendered_count = 0    # how many thumbnails are currently in the grid
+        self._current_thumb_size = 190
+        self._current_columns = 4
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._on_resize_debounced)
@@ -106,7 +112,18 @@ class GalleryTab(QWidget):
         self.gallery_grid.setSpacing(8)
         self.gallery_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         scroll.setWidget(self.gallery_container)
-        splitter.addWidget(scroll)
+
+        # "Load More" button below the grid (hidden when not needed)
+        grid_outer = QWidget()
+        grid_vbox = QVBoxLayout(grid_outer)
+        grid_vbox.setContentsMargins(0, 0, 0, 0)
+        grid_vbox.setSpacing(4)
+        grid_vbox.addWidget(scroll)
+        self._load_more_btn = QPushButton('Load More...')
+        self._load_more_btn.setVisible(False)
+        self._load_more_btn.clicked.connect(self._load_next_page)
+        grid_vbox.addWidget(self._load_more_btn)
+        splitter.addWidget(grid_outer)
 
         # Details panel
         self._detail_panel = self._build_detail_panel()
@@ -308,20 +325,61 @@ class GalleryTab(QWidget):
             photos = sorted(photos, key=lambda p: p.get('scene_type') or '')
 
         size_map = {'Small': 140, 'Medium': 190, 'Large': 240}
-        thumb_size = size_map[self.gallery_size.currentText()]
+        self._current_thumb_size = size_map[self.gallery_size.currentText()]
 
         scroll_width = self.gallery_container.parent().width() if self.gallery_container.parent() else 800
-        cell_width = thumb_size + self.gallery_grid.spacing() + 10
-        columns = max(1, scroll_width // cell_width)
+        cell_width = self._current_thumb_size + self.gallery_grid.spacing() + 10
+        self._current_columns = max(1, scroll_width // cell_width)
 
         group_by = self.gallery_group.currentText()
-        if group_by == 'None':
-            self._render_flat(photos, thumb_size, columns)
-        else:
-            self._render_grouped(photos, thumb_size, columns, group_by)
+        first_page = photos[:self.PAGE_SIZE]
+        self._pending_photos = photos[self.PAGE_SIZE:]
+        self._rendered_count = 0
 
-        self.photo_count_label.setText(f'{len(photos)} photo{"s" if len(photos) != 1 else ""}')
+        if group_by == 'None':
+            self._render_flat(first_page, self._current_thumb_size, self._current_columns)
+        else:
+            self._render_grouped(first_page, self._current_thumb_size, self._current_columns, group_by)
+
+        self._rendered_count = len(first_page)
+        remaining = len(self._pending_photos)
+        total = len(photos)
+        shown = self._rendered_count
+        if remaining > 0:
+            self._load_more_btn.setText(f'Load {min(self.PAGE_SIZE, remaining)} more  ({shown} of {total} shown)')
+            self._load_more_btn.setVisible(True)
+        else:
+            self._load_more_btn.setVisible(False)
+
+        self.photo_count_label.setText(f'{shown} / {total} photo{"s" if total != 1 else ""}')
         self._update_thumbnail_selection_styles()
+
+    def _load_next_page(self):
+        """Append the next PAGE_SIZE thumbnails to the existing grid."""
+        group_by = self.gallery_group.currentText()
+        batch = self._pending_photos[:self.PAGE_SIZE]
+        self._pending_photos = self._pending_photos[self.PAGE_SIZE:]
+
+        if group_by == 'None':
+            for photo in batch:
+                idx = self._rendered_count
+                thumb = self._create_thumbnail(photo, self._current_thumb_size)
+                self.gallery_grid.addWidget(thumb, idx // self._current_columns, idx % self._current_columns)
+                self._rendered_count += 1
+        else:
+            # For grouped mode, delegate to _render_grouped which handles headers
+            self._render_grouped(batch, self._current_thumb_size, self._current_columns, group_by)
+            self._rendered_count += len(batch)
+
+        remaining = len(self._pending_photos)
+        total = self._rendered_count + remaining
+        if remaining > 0:
+            self._load_more_btn.setText(f'Load {min(self.PAGE_SIZE, remaining)} more  ({self._rendered_count} of {total} shown)')
+        else:
+            self._load_more_btn.setVisible(False)
+            self.photo_count_label.setText(f'{self._rendered_count} photo{"s" if self._rendered_count != 1 else ""}')
+            return
+        self.photo_count_label.setText(f'{self._rendered_count} / {total} photo{"s" if total != 1 else ""}')
 
     def _group_key(self, photo: dict, group_by: str) -> str:
         if group_by == 'By Date':

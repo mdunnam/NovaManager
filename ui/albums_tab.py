@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QScrollArea, QGridLayout,
     QFrame, QInputDialog, QMessageBox, QSplitter, QMenu,
-    QSizePolicy,
+    QSizePolicy, QDialog, QDialogButtonBox, QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QIcon, QAction
@@ -180,12 +180,11 @@ class AlbumsTab(QWidget):
         album_id = current.data(Qt.ItemDataRole.UserRole)
         self.current_album_id = album_id
 
-        # Find album name
-        albums = self.controller.db.get_albums()
-        album = next((a for a in albums if a['id'] == album_id), None)
-        if album:
-            prefix = "★ Smart: " if album.get('is_smart') else "▣ "
-            self.album_title_label.setText(f"{prefix}{album['name']}")
+        # Album name is already in the list item text — no extra DB call needed
+        is_smart = current.text().startswith('\u2605')
+        album_name = current.text()[2:].strip()
+        prefix = '\u2605 Smart: ' if is_smart else '\u25a3 '
+        self.album_title_label.setText(f'{prefix}{album_name}')
 
         self.add_photos_btn.setEnabled(True)
         self.set_cover_btn.setEnabled(True)
@@ -221,15 +220,58 @@ class AlbumsTab(QWidget):
                 self.controller.statusBar().showMessage(f'Created album "{name.strip()}"', 3000)
 
     def create_smart_album(self):
-        """Create a smart album pre-filtered by current scene/status."""
-        name, ok = QInputDialog.getText(self, "New Smart Album", "Smart album name:")
+        """Create a smart album that auto-populates from current filters."""
+        name, ok = QInputDialog.getText(self, 'New Smart Album', 'Smart album name:')
         if not ok or not name.strip():
             return
-        # For now create as manual — smart filter support in next iteration
-        self.controller.db.create_album(name.strip(), is_smart=1)
+
+        # Build a filter description from current filter_tab state (if available)
+        filter_str = ''
+        ft = getattr(self.controller, 'filters_tab', None)
+        if ft:
+            parts = []
+            for attr, label in [
+                ('filter_scene', 'scene'), ('filter_mood', 'mood'),
+                ('filter_subjects', 'subjects'), ('filter_quality', 'quality'),
+                ('filter_content_rating', 'content_rating'),
+            ]:
+                combo = getattr(ft, attr, None)
+                if combo and combo.currentIndex() > 0:
+                    parts.append(f'{label}={combo.currentText()}')
+            for attr, label in [
+                ('filter_raw', 'status=raw'), ('filter_needs_edit', 'status=needs_edit'),
+                ('filter_ready', 'status=ready'), ('filter_released', 'status=released'),
+            ]:
+                cb = getattr(ft, attr, None)
+                if cb and cb.isChecked():
+                    parts.append(label)
+            for attr, label in [('filter_tag', 'tag'), ('filter_location', 'location'), ('filter_package', 'package')]:
+                le = getattr(ft, attr, None)
+                v = le.text().strip() if le else ''
+                if v:
+                    parts.append(f'{label}={v}')
+            filter_str = '&'.join(parts)
+
+        album_id = self.controller.db.create_album(name.strip(), is_smart=1, smart_filter=filter_str)
+
+        # Auto-populate using current filtered photos if any filter is active
+        if filter_str:
+            photos = getattr(self.controller, '_current_filtered_photos', None)
+            if photos is None:
+                photos = self.controller.db.get_all_photos()
+            added = 0
+            for p in photos:
+                if self.controller.db.add_photo_to_album(album_id, p['id']):
+                    added += 1
+        else:
+            added = 0
+
         self.refresh_album_list()
+        msg = f'Created smart album "{name.strip()}"'
+        if filter_str:
+            msg += f' with {added} matching photo(s).'
         if self.controller.statusBar():
-            self.controller.statusBar().showMessage(f'Created smart album "{name.strip()}"', 3000)
+            self.controller.statusBar().showMessage(msg, 4000)
 
     def _album_context_menu(self, pos):
         item = self.album_list.itemAt(pos)
@@ -250,7 +292,7 @@ class AlbumsTab(QWidget):
         album = next((a for a in albums if a['id'] == album_id), None)
         if not album:
             return
-        name, ok = QInputDialog.getText(self, "Rename Album", "New name:", text=album['name'])
+        name, ok = QInputDialog.getText(self, 'Rename Album', 'New name:', text=album['name'])
         if ok and name.strip():
             self.controller.db.rename_album(album_id, name.strip())
             self.refresh_album_list()
@@ -277,22 +319,53 @@ class AlbumsTab(QWidget):
     # ── Photo management ────────────────────────────────────────
 
     def add_photos_to_album(self):
+        """Open a multi-select dialog to pick photos from the library."""
         if not self.current_album_id:
             return
-        # Use the existing PhotoPickerDialog from nova_manager
-        try:
-            from nova_manager import PhotoPickerDialog
-            picker = PhotoPickerDialog(self.controller.db, self)
-            picker.setWindowTitle("Select Photos to Add to Album")
-            if picker.exec():
-                photo = picker.selected_photo
-                if photo:
-                    self.controller.db.add_photo_to_album(self.current_album_id, photo['id'])
-                    self._load_album_grid(self.current_album_id)
-                    if self.controller.statusBar():
-                        self.controller.statusBar().showMessage("Photo added to album", 2000)
-        except Exception as e:
-            QMessageBox.information(self, "Add Photos", f"Use drag-and-drop or right-click photos in Library to add to albums.\n\n(Picker error: {e})")
+
+        all_photos = self.controller.db.get_all_photos()
+        if not all_photos:
+            QMessageBox.information(self, 'Empty Library', 'No photos in the library yet.')
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Add Photos to Album')
+        dlg.setMinimumSize(520, 440)
+        vbox = QVBoxLayout(dlg)
+        vbox.addWidget(QLabel('Select one or more photos (Ctrl/Shift to multi-select):', dlg))
+
+        list_widget = QListWidget(dlg)
+        list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        for photo in all_photos:
+            item = QListWidgetItem(photo.get('filename') or str(photo['id']))
+            item.setData(Qt.ItemDataRole.UserRole, photo['id'])
+            list_widget.addItem(item)
+        vbox.addWidget(list_widget)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dlg
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vbox.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected_ids = [
+            item.data(Qt.ItemDataRole.UserRole)
+            for item in list_widget.selectedItems()
+        ]
+        if not selected_ids:
+            return
+
+        added = 0
+        for pid in selected_ids:
+            if self.controller.db.add_photo_to_album(self.current_album_id, pid):
+                added += 1
+        self._load_album_grid(self.current_album_id)
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(f'Added {added} photo(s) to album.', 3000)
 
     def remove_photo(self, photo_id):
         if not self.current_album_id:
@@ -318,9 +391,9 @@ class AlbumsTab(QWidget):
     # ── Auto-populate smart albums by date ─────────────────────
 
     def create_date_albums(self):
-        """Create smart albums grouped by month/year from EXIF date."""
+        """Create albums grouped by month/year from EXIF date. Uses one transaction."""
         photos = self.controller.db.get_all_photos()
-        months = {}
+        months: dict = {}
         for p in photos:
             dt = p.get('exif_date_taken') or p.get('date_created')
             if dt:
@@ -332,11 +405,24 @@ class AlbumsTab(QWidget):
                     months.setdefault(key, []).append(p['id'])
                 except Exception:
                     pass
+
         created = 0
-        for month_name, photo_ids in months.items():
-            album_id = self.controller.db.create_album(month_name, is_smart=1)
-            for pid in photo_ids:
-                self.controller.db.add_photo_to_album(album_id, pid)
-            created += 1
+        try:
+            # Disable auto-commit for batch speed
+            self.controller.db.conn.execute('BEGIN')
+            for month_name, photo_ids in months.items():
+                album_id = self.controller.db.create_album(month_name, is_smart=1)
+                for pid in photo_ids:
+                    self.controller.db.cursor.execute(
+                        'INSERT OR IGNORE INTO album_photos (album_id, photo_id) VALUES (?, ?)',
+                        (album_id, pid),
+                    )
+                created += 1
+            self.controller.db.conn.commit()
+        except Exception as e:
+            self.controller.db.conn.rollback()
+            QMessageBox.critical(self, 'Error', f'Failed to create date albums: {e}')
+            return
+
         self.refresh_album_list()
-        QMessageBox.information(self, "Date Albums", f"Created {created} date-based albums.")
+        QMessageBox.information(self, 'Date Albums', f'Created {created} date-based album(s).')

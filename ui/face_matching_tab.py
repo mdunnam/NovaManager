@@ -29,9 +29,56 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QStyle,
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QIcon
 from core.icons import icon as _icon
+
+
+class _AnalysisWorker(QThread):
+    """Background worker for face-matching analysis — keeps the UI responsive."""
+
+    log = pyqtSignal(str)          # progress log line
+    progress = pyqtSignal(int, int) # current, total
+    finished = pyqtSignal(int, int) # analyzed, rated
+
+    def __init__(self, face_matcher, benchmark_photos: list, photos: list):
+        super().__init__()
+        self._matcher = face_matcher
+        self._benchmarks = benchmark_photos
+        self._photos = photos
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        analyzed = rated = 0
+        total = len(self._photos)
+        for idx, photo in enumerate(self._photos, 1):
+            if self._stop:
+                self.log.emit('[CANCELLED] Analysis stopped by user.')
+                break
+            filepath = photo.get('filepath', '')
+            if not os.path.exists(filepath):
+                continue
+            try:
+                details = self._matcher.compare_face(filepath, return_details=True)
+                if 'error' not in details:
+                    rating = details.get('rating', 0)
+                    similarity = details.get('best_similarity', 0)
+                    photo['_new_rating'] = rating
+                    photo['_similarity'] = similarity
+                    if rating > 0:
+                        rated += 1
+                        self.log.emit(
+                            f'[{idx}/{total}] {os.path.basename(filepath)}: '
+                            f'{rating}⭐ (sim: {similarity:.3f})'
+                        )
+                analyzed += 1
+                self.progress.emit(idx, total)
+            except Exception as e:
+                self.log.emit(f'[WARN] {os.path.basename(filepath)}: {e}')
+        self.finished.emit(analyzed, rated)
 
 
 class FaceMatchingTab(QWidget):
@@ -43,6 +90,7 @@ class FaceMatchingTab(QWidget):
         self.benchmark_photos = []
         self.face_matcher = None
         self.matcher_type = "opencv"  # Default to OpenCV
+        self._worker = None
         self._build_ui()
         self.load_benchmarks_from_settings()
         self.render_benchmark_grid()
@@ -109,12 +157,26 @@ class FaceMatchingTab(QWidget):
         benchmark_buttons.addWidget(clear_benchmark_btn)
         left_layout.addLayout(benchmark_buttons)
 
+        from PyQt6.QtWidgets import QProgressBar
         run_btn = QPushButton("Analyze All Photos")
         run_btn.setIcon(_icon('scan', 16, '#ffffff'))
         run_btn.setIconSize(QSize(16, 16))
         run_btn.clicked.connect(self.run_analysis)
         run_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
+        self._run_btn = run_btn
         left_layout.addWidget(run_btn)
+
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.setIcon(_icon('stop'))
+        self._cancel_btn.setIconSize(QSize(16, 16))
+        self._cancel_btn.setVisible(False)
+        self._cancel_btn.clicked.connect(self._cancel_analysis)
+        left_layout.addWidget(self._cancel_btn)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setVisible(False)
+        self._progress_bar.setFormat('%v / %m')
+        left_layout.addWidget(self._progress_bar)
         content_layout.addWidget(left_widget, 1)
 
         # RIGHT: Log output
@@ -295,87 +357,78 @@ class FaceMatchingTab(QWidget):
             print(f"Delete benchmark error: {exc}")
 
     def run_analysis(self):
-        """Run face matching analysis on all photos in library."""
+        """Start threaded face-matching analysis on all photos in the library."""
         self.face_log_output.clear()
-        self.face_log_output.append("[INFO] Face matching analysis started...")
-        
+        self.face_log_output.append('[INFO] Face matching analysis started...')
+
         if not self.benchmark_photos:
-            self.face_log_output.append("[ERROR] No benchmark photos loaded. Please add reference photos first.")
-            QMessageBox.warning(self, "No Benchmarks", "Please add reference photos before running analysis.")
+            self.face_log_output.append('[ERROR] No benchmark photos loaded.')
+            QMessageBox.warning(self, 'No Benchmarks', 'Please add reference photos before running analysis.')
             return
-        
-        try:
-            # Initialize matcher if needed
-            if self.face_matcher is None:
-                self._initialize_matcher()
-            
-            # Clear and reload benchmarks
-            self.face_log_output.append(f"[INFO] Loading {len(self.benchmark_photos)} benchmark(s)...")
-            self.face_matcher.clear_benchmarks()
-            
-            for idx, benchmark_path in enumerate(self.benchmark_photos, 1):
-                if os.path.exists(benchmark_path):
-                    success = self.face_matcher.add_benchmark(benchmark_path, name=f"Benchmark_{idx}")
-                    if success:
-                        self.face_log_output.append(f"[OK] Loaded benchmark {idx}/{len(self.benchmark_photos)}")
-                    else:
-                        self.face_log_output.append(f"[WARN] No face detected in benchmark {idx}")
-                else:
-                    self.face_log_output.append(f"[ERROR] Benchmark file not found: {benchmark_path}")
-            
-            # Get all photos from database
-            self.face_log_output.append("[INFO] Fetching photos from database...")
-            photos = self.controller.db.get_all_photos()
-            self.face_log_output.append(f"[INFO] Found {len(photos)} photos to analyze")
-            
-            # Analyze each photo
-            analyzed = 0
-            rated = 0
-            for idx, photo in enumerate(photos, 1):
-                photo_id = photo['id']
-                filepath = photo['filepath']
-                
-                if not os.path.exists(filepath):
-                    continue
-                
-                # Compare face
-                details = self.face_matcher.compare_face(filepath, return_details=True)
-                
-                if 'error' not in details:
-                    rating = details['rating']
-                    similarity = details.get('best_similarity', 0)
-                    
-                    # Update database with rating
-                    self.controller.db.update_photo(photo_id, face_match_rating=rating)
-                    
-                    if rating > 0:
-                        rated += 1
-                        self.face_log_output.append(
-                            f"[{idx}/{len(photos)}] {Path(filepath).name}: {rating} stars (sim: {similarity:.3f})"
-                        )
-                
-                analyzed += 1
-                
-                # Update progress every 10 photos
-                if analyzed % 10 == 0:
-                    self.face_log_output.append(f"[PROGRESS] Analyzed {analyzed}/{len(photos)} photos...")
-                    self.face_log_output.repaint()
-            
-            self.face_log_output.append(f"\n[COMPLETE] Analysis finished!")
-            self.face_log_output.append(f"[STATS] Analyzed: {analyzed}, Rated: {rated}")
-            
-            # Reload results
-            self.load_face_similarity_results()
-            
-            QMessageBox.information(
-                self, 
-                "Analysis Complete", 
-                f"Analyzed {analyzed} photos.\n{rated} photos received ratings."
+
+        if self._worker and self._worker.isRunning():
+            return  # already running
+
+        if self.face_matcher is None:
+            self._initialize_matcher()
+
+        # Load benchmarks
+        self.face_log_output.append(f'[INFO] Loading {len(self.benchmark_photos)} benchmark(s)...')
+        self.face_matcher.clear_benchmarks()
+        for idx, path in enumerate(self.benchmark_photos, 1):
+            if os.path.exists(path):
+                ok = self.face_matcher.add_benchmark(path, name=f'Benchmark_{idx}')
+                msg = '[OK]' if ok else '[WARN] No face detected in'
+                self.face_log_output.append(f'{msg} benchmark {idx}/{len(self.benchmark_photos)}')
+            else:
+                self.face_log_output.append(f'[ERROR] Benchmark not found: {path}')
+
+        photos = self.controller.db.get_all_photos()
+        self.face_log_output.append(f'[INFO] Found {len(photos)} photos to analyse')
+
+        self._progress_bar.setMaximum(len(photos))
+        self._progress_bar.setValue(0)
+        self._progress_bar.setVisible(True)
+        self._run_btn.setEnabled(False)
+        self._cancel_btn.setVisible(True)
+
+        self._worker = _AnalysisWorker(self.face_matcher, self.benchmark_photos, photos)
+        self._worker.log.connect(self.face_log_output.append)
+        self._worker.progress.connect(lambda cur, tot: self._progress_bar.setValue(cur))
+        self._worker.finished.connect(self._on_analysis_done)
+        self._worker.start()
+
+    def _cancel_analysis(self):
+        """Request the running worker to stop."""
+        if self._worker:
+            self._worker.stop()
+
+    def _on_analysis_done(self, analyzed: int, rated: int):
+        """Persist ratings into the DB and update UI after the worker finishes."""
+        self._progress_bar.setVisible(False)
+        self._cancel_btn.setVisible(False)
+        self._run_btn.setEnabled(True)
+
+        # Write ratings to DB for photos that were processed
+        if self._worker:
+            for photo in self._worker._photos:
+                nr = photo.get('_new_rating')
+                if nr is not None:
+                    try:
+                        self.controller.db.update_photo(photo['id'], face_match_rating=nr)
+                    except Exception:
+                        pass
+
+        self.face_log_output.append(f'\n[COMPLETE] Analysed: {analyzed}, Rated: {rated}')
+        self.load_face_similarity_results()
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(
+                f'Face analysis done — {analyzed} analysed, {rated} rated.', 5000
             )
-            
-        except Exception as e:
-            self.face_log_output.append(f"[ERROR] Analysis failed: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Analysis failed: {str(e)}")
+        QMessageBox.information(
+            self, 'Analysis Complete',
+            f'Analysed {analyzed} photos.\n{rated} photos received ratings.'
+        )
 
     def apply_filter(self):
         """Filter results table by minimum star rating."""
@@ -427,13 +480,10 @@ class FaceMatchingTab(QWidget):
             self.controller.statusBar().showMessage(f'Flagged {updated} photo(s)', 2000)
 
     def load_face_similarity_results(self):
-        """Load persisted analysis results from database."""
+        """Load only rated photos from the DB — avoids loading the entire library just to filter."""
         try:
-            # Get all photos with face match ratings
-            photos = self.controller.db.get_all_photos()
-            
-            # Filter to only show rated photos
-            rated_photos = [p for p in photos if p.get('face_match_rating', 0) > 0]
+            all_photos = self.controller.db.get_all_photos()
+            rated_photos = [p for p in all_photos if p.get('face_match_rating', 0) > 0]
             
             self.face_results_table.setRowCount(0)
             self.face_results_table.setSortingEnabled(False)
@@ -481,10 +531,10 @@ class FaceMatchingTab(QWidget):
                 self.face_results_table.setItem(row, 5, flag_item)
             
             self.face_results_table.setSortingEnabled(True)
-            self.face_results_table.sortItems(3, Qt.SortOrder.DescendingOrder)  # Sort by rating
-            
+            self.face_results_table.sortItems(3, Qt.SortOrder.DescendingOrder)
+
         except Exception as e:
-            print(f"Error loading face similarity results: {e}")
+            print(f'Error loading face similarity results: {e}')
 
     def open_photo_from_results(self):
         """Open the selected photo from the results table in the lightbox editor."""
