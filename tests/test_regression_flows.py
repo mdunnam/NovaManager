@@ -136,6 +136,111 @@ def test_face_worker_emits_finished_once() -> None:
             pass
 
 
+def test_face_worker_cancel_no_success_dialog() -> None:
+    """Cancel should set cancelled=True on the finished signal."""
+
+    class _Matcher:
+        def __init__(self):
+            self.calls = 0
+
+        def compare_face(self, _filepath, return_details=True):
+            self.calls += 1
+            return {"rating": 3, "best_similarity": 0.7}
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f1, \
+         tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f2, \
+         tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f3:
+        paths = [f1.name, f2.name, f3.name]
+
+    try:
+        matcher = _Matcher()
+        photos = [{"id": i, "filepath": p} for i, p in enumerate(paths, 1)]
+        worker = _AnalysisWorker(matcher, [], photos)
+        worker._stop = True  # cancel before first iteration
+
+        finished_calls = []
+        worker.finished.connect(
+            lambda a, r, c: finished_calls.append((a, r, c))
+        )
+        worker.run()
+
+        assert len(finished_calls) == 1, "finished should emit exactly once even when cancelled"
+        _, _, cancelled = finished_calls[0]
+        assert cancelled is True, "cancelled flag must be True when stopped before first photo"
+        assert matcher.calls == 0, "matcher should not be called after cancel"
+    finally:
+        for p in paths:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
+def test_date_albums_use_commit_false() -> None:
+    """create_date_albums should batch all INSERTs into one transaction.
+
+    We verify this indirectly: all albums and links are created correctly,
+    and the helpers accept commit=False without raising.
+    """
+    import sqlite3
+    import unittest.mock as mock
+    from core.database import PhotoDatabase
+
+    ctrl = _DummyController()
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.executescript("""
+        CREATE TABLE albums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT, description TEXT DEFAULT '', is_smart INTEGER DEFAULT 0,
+            smart_filter TEXT DEFAULT '', sort_order INTEGER DEFAULT 0,
+            date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            album_id INTEGER, photo_id INTEGER,
+            date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sort_order INTEGER DEFAULT 0,
+            UNIQUE(album_id, photo_id)
+        );
+    """)
+    conn.commit()
+
+    db = object.__new__(PhotoDatabase)
+    db.conn = conn
+    db.cursor = cur
+    db.get_all_photos = lambda: [
+        {"id": 1, "exif_date_taken": "2025-06-15", "date_created": None},
+        {"id": 2, "exif_date_taken": "2025-06-20", "date_created": None},
+        {"id": 3, "exif_date_taken": "2025-07-01", "date_created": None},
+    ]
+    ctrl.db = db
+
+    tab = AlbumsTab(ctrl)
+    tab.refresh_album_list = lambda: None
+
+    with mock.patch("PyQt6.QtWidgets.QMessageBox.information"):
+        tab.create_date_albums()
+
+    # Both months exist as albums.
+    cur.execute("SELECT name FROM albums ORDER BY name")
+    names = {row[0] for row in cur.fetchall()}
+    assert "June 2025" in names and "July 2025" in names, f"Unexpected albums: {names}"
+
+    # All 3 photos are linked.
+    cur.execute("SELECT COUNT(*) FROM album_photos")
+    assert cur.fetchone()[0] == 3, "Expected all 3 photos linked to date albums"
+
+    # create_album and add_photo_to_album accept commit=False without raising.
+    album_id = db.create_album("Test Batch", commit=False)
+    assert album_id is not None
+    result = db.add_photo_to_album(album_id, 99, commit=False)
+    assert result is True
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication([])
 
@@ -143,6 +248,8 @@ def main() -> int:
         ("Gallery pagination + preserve_limit", test_gallery_pagination_sort_and_preserve_limit),
         ("Smart album status parsing", test_smart_album_status_clause_parsing),
         ("Face worker finished once", test_face_worker_emits_finished_once),
+        ("Face worker cancel flag", test_face_worker_cancel_no_success_dialog),
+        ("Date albums atomic transaction", test_date_albums_use_commit_false),
     ]
 
     print("=" * 60)

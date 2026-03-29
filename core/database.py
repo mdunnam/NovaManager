@@ -670,6 +670,20 @@ class PhotoDatabase:
         except:
             return False
     
+    def count_vocabulary_usage(self, field_name: str, value: str) -> int:
+        """Return the number of photos whose `field_name` column equals `value`."""
+        safe_fields = {
+            'scene_type', 'mood', 'quality', 'status', 'subjects',
+            'content_rating', 'location', 'package_name', 'tags',
+        }
+        if field_name not in safe_fields:
+            return 0
+        self.cursor.execute(
+            f'SELECT COUNT(*) FROM photos WHERE {field_name} = ?', (value,)
+        )
+        row = self.cursor.fetchone()
+        return row[0] if row else 0
+
     def remove_vocabulary_value(self, field_name, value):
         """Remove a value from field vocabulary"""
         self.cursor.execute(

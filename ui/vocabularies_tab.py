@@ -117,12 +117,7 @@ class VocabulariesTab(QWidget):
         vocab_with_desc = self.controller.db.get_vocabulary(field_name, include_descriptions=True)
         
         for value, description in vocab_with_desc:
-            # Count usage
-            self.controller.db.cursor.execute(
-                f'SELECT COUNT(*) FROM photos WHERE {field_name} = ?',
-                (value,)
-            )
-            count = self.controller.db.cursor.fetchone()[0]
+            count = self.controller.db.count_vocabulary_usage(field_name, value)
             
             row = self.vocab_list.rowCount()
             self.vocab_list.insertRow(row)
