@@ -5372,137 +5372,65 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to clear learning data: {e}")
     
-    def backup_learning_data(self):
-        """Backup learning data to a backup table"""
-        try:
-            backup_table = f"ai_corrections_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
-            # Create backup table
-            self.db.cursor.execute(f'''
-                CREATE TABLE IF NOT EXISTS {backup_table} AS 
-                SELECT * FROM ai_corrections
-            ''')
-            self.db.conn.commit()
-            
-            # Keep only last 5 backups
-            self.cleanup_old_backups()
-            
-            print(f"Created backup: {backup_table}")
-            return True
-        except Exception as e:
-            print(f"Failed to create backup: {e}")
-            return False
-    
-    def cleanup_old_backups(self):
-        """Keep only the 5 most recent backups"""
-        try:
-            # Get all backup tables
-            self.db.cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ai_corrections_backup_%'"
-            )
-            backups = [row[0] for row in self.db.cursor.fetchall()]
-            
-            # Sort by date (newest first) and keep only 5
-            backups.sort(reverse=True)
-            for old_backup in backups[5:]:
-                self.db.cursor.execute(f'DROP TABLE IF EXISTS {old_backup}')
-                print(f"Cleaned up old backup: {old_backup}")
-            
-            self.db.conn.commit()
-        except Exception as e:
-            print(f"Error cleaning up backups: {e}")
-    
+    def backup_learning_data(self) -> bool:
+        """Quick internal backup — called automatically before a clear/restore."""
+        import os
+        data_dir = os.path.join(os.path.dirname(self.db.db_path), '')
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        path = os.path.join(data_dir, f'ai_corrections_backup_{ts}.json')
+        return self.db.export_ai_corrections_json(path)
+
     def manual_backup_learning_data(self):
-        """Manual backup triggered by user"""
-        if self.backup_learning_data():
+        """Backup learning data to a user-chosen JSON file."""
+        from PyQt6.QtWidgets import QFileDialog
+        import os
+        default_name = f"ai_corrections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        data_dir = os.path.dirname(self.db.db_path)
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Save Learning Data Backup', os.path.join(data_dir, default_name),
+            'JSON files (*.json)'
+        )
+        if not path:
+            return
+        if self.db.export_ai_corrections_json(path):
             QMessageBox.information(
-                self,
-                "Backup Created",
-                "AI learning data has been backed up successfully!\n\n"
-                "The system keeps the 5 most recent backups."
+                self, 'Backup Created',
+                f'AI learning data exported to:\n{path}'
             )
         else:
-            QMessageBox.critical(
-                self,
-                "Backup Failed",
-                "Failed to create backup. Check console for errors."
-            )
-    
+            QMessageBox.critical(self, 'Backup Failed', 'Could not write backup file.')
+
     def restore_learning_data(self):
-        """Restore learning data from backup"""
-        try:
-            # Get available backups
-            self.db.cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ai_corrections_backup_%' ORDER BY name DESC"
+        """Restore learning data from a previously exported JSON file."""
+        from PyQt6.QtWidgets import QFileDialog
+        import os
+        data_dir = os.path.dirname(self.db.db_path)
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Open Learning Data Backup', data_dir,
+            'JSON files (*.json)'
+        )
+        if not path:
+            return
+
+        reply = QMessageBox.question(
+            self, 'Confirm Restore',
+            f'Import corrections from:\n{os.path.basename(path)}?\n\n'
+            'Existing corrections will be kept; imported rows will be merged.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        count = self.db.import_ai_corrections_json(path)
+        if count >= 0:
+            self.refresh_learning_data()
+            self.statusBar().showMessage(f'Imported {count} correction(s) from backup.', 4000)
+            QMessageBox.information(
+                self, 'Restore Complete',
+                f'Imported {count} correction(s) from:\n{os.path.basename(path)}'
             )
-            backups = [row[0] for row in self.db.cursor.fetchall()]
-            
-            if not backups:
-                QMessageBox.information(
-                    self,
-                    "No Backups",
-                    "No backup files found."
-                )
-                return
-            
-            # Let user choose which backup
-            from PyQt6.QtWidgets import QInputDialog
-            
-            # Format backup names for display
-            backup_labels = []
-            for b in backups:
-                # Extract datetime from name: ai_corrections_backup_20250101_120000
-                parts = b.split('_')
-                if len(parts) >= 4:
-                    date_str = parts[3]
-                    time_str = parts[4] if len(parts) > 4 else "000000"
-                    formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
-                    backup_labels.append(formatted)
-                else:
-                    backup_labels.append(b)
-            
-            item, ok = QInputDialog.getItem(
-                self,
-                "Restore Backup",
-                "Select backup to restore:",
-                backup_labels,
-                0,
-                False
-            )
-            
-            if ok and item:
-                # Get the actual table name
-                selected_backup = backups[backup_labels.index(item)]
-                
-                # Confirm restore
-                reply = QMessageBox.question(
-                    self,
-                    "Confirm Restore",
-                    f"Restore learning data from backup:\n{item}?\n\n"
-                    "This will replace current learning data.",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                
-                if reply == QMessageBox.StandardButton.Yes:
-                    # Clear current data and restore from backup
-                    self.db.cursor.execute('DELETE FROM ai_corrections')
-                    self.db.cursor.execute(f'''
-                        INSERT INTO ai_corrections 
-                        SELECT * FROM {selected_backup}
-                    ''')
-                    self.db.conn.commit()
-                    
-                    self.refresh_learning_data()
-                    self.statusBar().showMessage(f"Restored from backup: {item}", 3000)
-                    QMessageBox.information(
-                        self,
-                        "Restore Complete",
-                        f"Learning data restored from backup:\n{item}"
-                    )
-        except Exception as e:
-            QMessageBox.critical(self, "Restore Failed", f"Failed to restore backup: {e}")
-            import traceback
-            traceback.print_exc()
+        else:
+            QMessageBox.critical(self, 'Restore Failed', 'Could not read backup file.')
     
     def setup_table_delegates(self):
         """Setup dropdown delegates for table columns using controlled vocabularies"""

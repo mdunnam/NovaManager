@@ -84,12 +84,22 @@ class DuplicatesTab(QWidget):
         self.delete_btn.setEnabled(False)
         self.delete_btn.setStyleSheet('color: #f44336;')
         self.delete_btn.clicked.connect(self._delete_duplicates)
+        self.keep_best_btn = QPushButton('Auto: Keep Best Quality')
+        self.keep_best_btn.setIcon(_icon('sparkle', 16, '#ffffff'))
+        self.keep_best_btn.setIconSize(QSize(16, 16))
+        self.keep_best_btn.setEnabled(False)
+        self.keep_best_btn.setToolTip(
+            'Automatically selects the highest quality copy in each group '
+            '(uses quality score, then file size as fallback)'
+        )
+        self.keep_best_btn.clicked.connect(self._auto_keep_best)
         self.mark_btn = QPushButton('Mark as Reviewed (hide)')
         self.mark_btn.setIcon(_icon('eye_off'))
         self.mark_btn.setIconSize(QSize(16, 16))
         self.mark_btn.setEnabled(False)
         self.mark_btn.clicked.connect(self._mark_reviewed)
         action_row.addWidget(self.delete_btn)
+        action_row.addWidget(self.keep_best_btn)
         action_row.addWidget(self.mark_btn)
         action_row.addStretch()
         self.result_label = QLabel('')
@@ -123,10 +133,12 @@ class DuplicatesTab(QWidget):
             )
             self.delete_btn.setEnabled(True)
             self.mark_btn.setEnabled(True)
+            self.keep_best_btn.setEnabled(True)
         else:
             self.info_label.setText('No duplicates found.')
             self.delete_btn.setEnabled(False)
             self.mark_btn.setEnabled(False)
+            self.keep_best_btn.setEnabled(False)
 
     def _render_groups(self):
         # Clear
@@ -202,6 +214,25 @@ class DuplicatesTab(QWidget):
             card.setStyleSheet('QFrame { border: 1px solid #444; }')
 
         return card
+
+    def _auto_keep_best(self):
+        """Auto-select the highest quality photo in each group.
+
+        Ranks by quality_score descending, then file_size_kb descending as fallback.
+        """
+        for group_idx, group in enumerate(self._groups):
+            best = max(
+                group,
+                key=lambda p: (
+                    float(p.get('quality_score') or 0),
+                    int(p.get('file_size_kb') or 0),
+                ),
+            )
+            self._keep_selections[group_idx] = best['id']
+        self._render_groups()
+        self.result_label.setText(
+            f'Auto-selected best quality copy in {len(self._groups)} group(s).'
+        )
 
     def _set_keep(self, group_idx: int, photo_id: int, checked: bool):
         if checked:

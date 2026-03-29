@@ -44,8 +44,17 @@ def score_image(filepath: str) -> dict:
     result['blur_score'] = blur
     result['exposure_score'] = exposure
 
+    # Thresholds differ by backend:
+    # Laplacian variance (CV2) ranges ~0–5000+; PIL stddev*2 ranges ~0–60.
+    if _CV2:
+        blur_blurry_threshold = 50.0
+        blur_sharp_threshold = 200.0
+    else:
+        blur_blurry_threshold = 8.0
+        blur_sharp_threshold = 35.0
+
     issues = []
-    if blur < 50:
+    if blur < blur_blurry_threshold:
         issues.append('blurry')
     if exposure < 0.15:
         issues.append('underexposed')
@@ -55,8 +64,8 @@ def score_image(filepath: str) -> dict:
     result['quality_issues'] = issues
 
     if not issues:
-        result['quality'] = QUALITY_EXCELLENT if blur > 200 else QUALITY_GOOD
-    elif len(issues) == 1 and blur > 80:
+        result['quality'] = QUALITY_EXCELLENT if blur > blur_sharp_threshold else QUALITY_GOOD
+    elif len(issues) == 1 and blur > blur_blurry_threshold * 1.6:
         result['quality'] = QUALITY_FAIR
     else:
         result['quality'] = QUALITY_POOR

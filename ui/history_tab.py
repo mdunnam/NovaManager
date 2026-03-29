@@ -6,7 +6,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QComboBox, QGridLayout, QSizePolicy,
-    QApplication,
+    QApplication, QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QPixmap, QDesktopServices
@@ -24,11 +24,12 @@ _PLATFORM_COLOR = {
 
 
 class _PostCard(QFrame):
-    def __init__(self, post: dict, photo, controller, parent=None):
+    def __init__(self, post: dict, photo, controller, parent=None, delete_fn=None):
         super().__init__(parent)
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setMaximumWidth(200)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        self._delete_fn = delete_fn
         self._build(post, photo, controller)
 
     def _build(self, post, photo, controller):
@@ -97,6 +98,33 @@ class _PostCard(QFrame):
                 lambda: QApplication.clipboard().setText(post.get('caption', ''))
             )
             layout.addWidget(copy_btn)
+
+        # Remove from history
+        entry_id = post.get('id')
+        if entry_id:
+            del_btn = QPushButton('Remove')
+            del_btn.setIcon(_icon('trash'))
+            del_btn.setIconSize(QSize(14, 14))
+            del_btn.setStyleSheet('font-size: 9px; padding: 2px; color: #e57373;')
+            del_btn.clicked.connect(lambda: self._on_delete(entry_id, controller))
+            layout.addWidget(del_btn)
+
+    def _on_delete(self, entry_id: int, controller):
+        """Remove this entry from posting_history and refresh the parent tab."""
+        reply = QMessageBox.question(
+            self, 'Remove Entry',
+            'Remove this post from history?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            controller.db.delete_posting_history_entry(entry_id)
+        except Exception as e:
+            QMessageBox.warning(self, 'Error', str(e))
+            return
+        if self._delete_fn:
+            self._delete_fn()
 
 
 class HistoryTab(QWidget):
@@ -171,7 +199,7 @@ class HistoryTab(QWidget):
                     photo = self.controller.db.get_photo(post['photo_id'])
                 except Exception:
                     pass
-            card = _PostCard(post, photo, self.controller, self)
+            card = _PostCard(post, photo, self.controller, self, delete_fn=self.refresh)
             self.grid_layout.addWidget(card, idx // cols, idx % cols)
 
         self.count_label.setText(f'{len(posts)} post{"s" if len(posts) != 1 else ""} sent')

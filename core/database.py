@@ -931,6 +931,74 @@ class PhotoDatabase:
             print(f"Error deleting scheduled post: {e}")
             return False
 
+    def update_scheduled_post(self, post_id: int, caption: str = None, scheduled_time: str = None) -> bool:
+        """Update caption and/or scheduled_time for a scheduled post."""
+        try:
+            fields, params = [], []
+            if caption is not None:
+                fields.append('caption = ?')
+                params.append(caption)
+            if scheduled_time is not None:
+                fields.append('scheduled_time = ?')
+                params.append(scheduled_time)
+            if not fields:
+                return True
+            params.append(post_id)
+            self.cursor.execute(
+                f'UPDATE scheduled_posts SET {", ".join(fields)} WHERE id = ?', params
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating scheduled post: {e}")
+            return False
+
+    def delete_posting_history_entry(self, entry_id: int) -> bool:
+        """Remove a single entry from the posting_history table."""
+        try:
+            self.cursor.execute('DELETE FROM posting_history WHERE id = ?', (entry_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting posting history entry: {e}")
+            return False
+
+    def export_ai_corrections_json(self, filepath: str) -> bool:
+        """Export all ai_corrections rows to a JSON file."""
+        import json
+        try:
+            self.cursor.execute('SELECT * FROM ai_corrections')
+            rows = [dict(r) for r in self.cursor.fetchall()]
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(rows, f, indent=2, default=str)
+            return True
+        except Exception as e:
+            print(f"Error exporting AI corrections: {e}")
+            return False
+
+    def import_ai_corrections_json(self, filepath: str) -> int:
+        """Import ai_corrections from a JSON file. Returns number of rows imported."""
+        import json
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                rows = json.load(f)
+            if not rows:
+                return 0
+            cols = [c for c in rows[0].keys() if c != 'id']
+            placeholders = ', '.join('?' for _ in cols)
+            col_list = ', '.join(cols)
+            for row in rows:
+                vals = [row.get(c) for c in cols]
+                self.cursor.execute(
+                    f'INSERT OR IGNORE INTO ai_corrections ({col_list}) VALUES ({placeholders})',
+                    vals,
+                )
+            self.conn.commit()
+            return len(rows)
+        except Exception as e:
+            print(f"Error importing AI corrections: {e}")
+            return -1
+
     def close(self):
         """Close database connection"""
         if self.conn:

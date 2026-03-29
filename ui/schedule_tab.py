@@ -7,7 +7,8 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QComboBox, QGroupBox,
+    QMessageBox, QComboBox, QGroupBox, QDialog, QDialogButtonBox,
+    QFormLayout, QTextEdit, QDateTimeEdit,
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QColor
@@ -69,6 +70,7 @@ class ScheduleTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setAlternatingRowColors(True)
+        self.table.doubleClicked.connect(self._edit_post)
         layout.addWidget(self.table)
 
         # Best time to post hints
@@ -162,6 +164,69 @@ class ScheduleTab(QWidget):
         self.count_label.setText(f'{total} total, {pending} pending')
 
     # ── Actions ──────────────────────────────────────────────────
+
+    def _edit_post(self, index):
+        """Open an edit dialog for the double-clicked pending/failed post row."""
+        row = index.row()
+        id_item = self.table.item(row, 0)
+        status_item = self.table.item(row, 3)
+        if not id_item:
+            return
+        status = (status_item.text() if status_item else '').lower()
+        if status not in ('pending', 'failed'):
+            QMessageBox.information(self, 'Edit Post', 'Only pending or failed posts can be edited.')
+            return
+
+        try:
+            post_id = int(id_item.text())
+            post = next(
+                (p for p in self.controller.db.get_scheduled_posts() if p['id'] == post_id), None
+            )
+        except Exception:
+            return
+        if not post:
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f'Edit Post #{post_id}')
+        dlg.setMinimumWidth(420)
+        form = QFormLayout(dlg)
+
+        caption_edit = QTextEdit()
+        caption_edit.setPlainText(post.get('caption') or '')
+        caption_edit.setFixedHeight(80)
+        form.addRow('Caption:', caption_edit)
+
+        dt_edit = QDateTimeEdit()
+        dt_edit.setDisplayFormat('yyyy-MM-dd HH:mm')
+        dt_edit.setCalendarPopup(True)
+        try:
+            from PyQt6.QtCore import QDateTime
+            dt_edit.setDateTime(QDateTime.fromString(
+                (post.get('scheduled_time') or '')[:16], 'yyyy-MM-dd HH:mm'
+            ))
+        except Exception:
+            pass
+        form.addRow('Scheduled time (UTC):', dt_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_caption = caption_edit.toPlainText().strip()
+            new_time = dt_edit.dateTime().toString('yyyy-MM-dd HH:mm:ss')
+            self.controller.db.update_scheduled_post(
+                post_id,
+                caption=new_caption or None,
+                scheduled_time=new_time,
+            )
+            self.refresh()
+            if self.controller.statusBar():
+                self.controller.statusBar().showMessage(f'Post #{post_id} updated.', 3000)
 
     def _get_selected_ids(self) -> list[int]:
         ids = []
