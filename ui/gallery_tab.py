@@ -34,8 +34,10 @@ class GalleryTab(QWidget):
         self.selected_gallery_photo_id = None
         self._thumbnail_frames = {}
         self._all_photos = []
+        self._display_photos = []
         self._pending_photos = []   # photos not yet rendered (pagination)
         self._rendered_count = 0    # how many thumbnails are currently in the grid
+        self._render_limit = self.PAGE_SIZE
         self._current_thumb_size = 190
         self._current_columns = 4
         self._resize_timer = QTimer(self)
@@ -303,6 +305,7 @@ class GalleryTab(QWidget):
             self.refresh_with_photos(self._all_photos)
 
     def refresh_with_photos(self, photos):
+        self._display_photos = list(photos)
         self._thumbnail_frames = {}
         while self.gallery_grid.count():
             item = self.gallery_grid.takeAt(0)
@@ -332,18 +335,26 @@ class GalleryTab(QWidget):
         self._current_columns = max(1, scroll_width // cell_width)
 
         group_by = self.gallery_group.currentText()
-        first_page = photos[:self.PAGE_SIZE]
-        self._pending_photos = photos[self.PAGE_SIZE:]
-        self._rendered_count = 0
+        self._render_limit = self.PAGE_SIZE
+        self._render_current_page(group_by)
 
+    def _render_current_page(self, group_by: str):
+        """Render the currently visible page from the stored sorted photo list."""
+        while self.gallery_grid.count():
+            item = self.gallery_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        visible = self._display_photos[:self._render_limit]
+        self._pending_photos = self._display_photos[self._render_limit:]
         if group_by == 'None':
-            self._render_flat(first_page, self._current_thumb_size, self._current_columns)
+            self._render_flat(visible, self._current_thumb_size, self._current_columns)
         else:
-            self._render_grouped(first_page, self._current_thumb_size, self._current_columns, group_by)
+            self._render_grouped(visible, self._current_thumb_size, self._current_columns, group_by)
 
-        self._rendered_count = len(first_page)
+        self._rendered_count = len(visible)
         remaining = len(self._pending_photos)
-        total = len(photos)
+        total = len(self._display_photos)
         shown = self._rendered_count
         if remaining > 0:
             self._load_more_btn.setText(f'Load {min(self.PAGE_SIZE, remaining)} more  ({shown} of {total} shown)')
@@ -355,31 +366,12 @@ class GalleryTab(QWidget):
         self._update_thumbnail_selection_styles()
 
     def _load_next_page(self):
-        """Append the next PAGE_SIZE thumbnails to the existing grid."""
-        group_by = self.gallery_group.currentText()
-        batch = self._pending_photos[:self.PAGE_SIZE]
-        self._pending_photos = self._pending_photos[self.PAGE_SIZE:]
+        """Increase the visible slice and rebuild safely.
 
-        if group_by == 'None':
-            for photo in batch:
-                idx = self._rendered_count
-                thumb = self._create_thumbnail(photo, self._current_thumb_size)
-                self.gallery_grid.addWidget(thumb, idx // self._current_columns, idx % self._current_columns)
-                self._rendered_count += 1
-        else:
-            # For grouped mode, delegate to _render_grouped which handles headers
-            self._render_grouped(batch, self._current_thumb_size, self._current_columns, group_by)
-            self._rendered_count += len(batch)
-
-        remaining = len(self._pending_photos)
-        total = self._rendered_count + remaining
-        if remaining > 0:
-            self._load_more_btn.setText(f'Load {min(self.PAGE_SIZE, remaining)} more  ({self._rendered_count} of {total} shown)')
-        else:
-            self._load_more_btn.setVisible(False)
-            self.photo_count_label.setText(f'{self._rendered_count} photo{"s" if self._rendered_count != 1 else ""}')
-            return
-        self.photo_count_label.setText(f'{self._rendered_count} / {total} photo{"s" if total != 1 else ""}')
+        Rebuilding avoids row/header collisions in grouped mode.
+        """
+        self._render_limit += self.PAGE_SIZE
+        self._render_current_page(self.gallery_group.currentText())
 
     def _group_key(self, photo: dict, group_by: str) -> str:
         if group_by == 'By Date':

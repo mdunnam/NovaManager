@@ -850,13 +850,14 @@ class PhotoDatabase:
             return 'unknown'
     
     # --- Album helpers ---
-    def create_album(self, name, description='', is_smart=0, smart_filter=''):
+    def create_album(self, name, description='', is_smart=0, smart_filter='', commit=True):
         """Create a new album"""
         self.cursor.execute('''
             INSERT INTO albums (name, description, is_smart, smart_filter)
             VALUES (?, ?, ?, ?)
         ''', (name, description, is_smart, smart_filter))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return self.cursor.lastrowid
 
     def get_albums(self):
@@ -874,14 +875,15 @@ class PhotoDatabase:
         ''', (album_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def add_photo_to_album(self, album_id, photo_id):
+    def add_photo_to_album(self, album_id, photo_id, commit=True):
         """Add a photo to an album"""
         try:
             self.cursor.execute(
                 'INSERT OR IGNORE INTO album_photos (album_id, photo_id) VALUES (?, ?)',
                 (album_id, photo_id)
             )
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
             return True
         except Exception as e:
             print(f"Error adding photo to album: {e}")

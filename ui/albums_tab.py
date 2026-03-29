@@ -197,7 +197,11 @@ class AlbumsTab(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        photos = self.controller.db.get_album_photos(album_id)
+        album = next((a for a in self.controller.db.get_albums() if a['id'] == album_id), None)
+        if album and album.get('is_smart') and album.get('smart_filter'):
+            photos = self._get_smart_album_photos(album.get('smart_filter') or '')
+        else:
+            photos = self.controller.db.get_album_photos(album_id)
         self.photo_count_label.setText(f"{len(photos)} photo{'s' if len(photos) != 1 else ''}")
 
         # Dynamic columns based on available width
@@ -252,19 +256,16 @@ class AlbumsTab(QWidget):
                     parts.append(f'{label}={v}')
             filter_str = '&'.join(parts)
 
-        album_id = self.controller.db.create_album(name.strip(), is_smart=1, smart_filter=filter_str)
+        if not filter_str:
+            QMessageBox.information(
+                self,
+                'No Active Filters',
+                'Apply one or more filters before creating a smart album.'
+            )
+            return
 
-        # Auto-populate using current filtered photos if any filter is active
-        if filter_str:
-            photos = getattr(self.controller, '_current_filtered_photos', None)
-            if photos is None:
-                photos = self.controller.db.get_all_photos()
-            added = 0
-            for p in photos:
-                if self.controller.db.add_photo_to_album(album_id, p['id']):
-                    added += 1
-        else:
-            added = 0
+        album_id = self.controller.db.create_album(name.strip(), is_smart=1, smart_filter=filter_str)
+        added = len(self._get_smart_album_photos(filter_str))
 
         self.refresh_album_list()
         msg = f'Created smart album "{name.strip()}"'
@@ -272,6 +273,53 @@ class AlbumsTab(QWidget):
             msg += f' with {added} matching photo(s).'
         if self.controller.statusBar():
             self.controller.statusBar().showMessage(msg, 4000)
+
+    def _get_smart_album_photos(self, filter_str: str) -> list:
+        """Evaluate a stored smart-filter query string against all photos.
+
+        The stored format is a simple ampersand-separated key=value list built
+        from FiltersTab controls.
+        """
+        photos = self.controller.db.get_all_photos()
+        if not filter_str:
+            return []
+
+        clauses = [part for part in filter_str.split('&') if part]
+
+        def matches(photo: dict) -> bool:
+            for clause in clauses:
+                if '=' not in clause:
+                    if clause == 'status=raw' and (photo.get('status') or '').lower() != 'raw':
+                        return False
+                    if clause == 'status=needs_edit' and (photo.get('status') or '').lower() != 'needs_edit':
+                        return False
+                    if clause == 'status=ready' and (photo.get('status') or '').lower() != 'ready':
+                        return False
+                    if clause == 'status=released' and 'released' not in (photo.get('status') or '').lower():
+                        return False
+                    continue
+
+                key, value = clause.split('=', 1)
+                value = value.strip().lower()
+                if key == 'scene' and (photo.get('scene_type') or '').lower() != value:
+                    return False
+                if key == 'mood' and (photo.get('mood') or '').lower() != value:
+                    return False
+                if key == 'subjects' and value not in (photo.get('subjects') or '').lower():
+                    return False
+                if key == 'quality' and (photo.get('quality') or '').lower() != value:
+                    return False
+                if key == 'content_rating' and (photo.get('content_rating') or '').lower() != value:
+                    return False
+                if key == 'tag' and value not in (photo.get('tags') or '').lower():
+                    return False
+                if key == 'location' and value not in (photo.get('location') or '').lower():
+                    return False
+                if key == 'package' and value not in (photo.get('package_name') or '').lower():
+                    return False
+            return True
+
+        return [photo for photo in photos if matches(photo)]
 
     def _album_context_menu(self, pos):
         item = self.album_list.itemAt(pos)
@@ -408,15 +456,11 @@ class AlbumsTab(QWidget):
 
         created = 0
         try:
-            # Disable auto-commit for batch speed
             self.controller.db.conn.execute('BEGIN')
             for month_name, photo_ids in months.items():
-                album_id = self.controller.db.create_album(month_name, is_smart=1)
+                album_id = self.controller.db.create_album(month_name, is_smart=1, commit=False)
                 for pid in photo_ids:
-                    self.controller.db.cursor.execute(
-                        'INSERT OR IGNORE INTO album_photos (album_id, photo_id) VALUES (?, ?)',
-                        (album_id, pid),
-                    )
+                    self.controller.db.add_photo_to_album(album_id, pid, commit=False)
                 created += 1
             self.controller.db.conn.commit()
         except Exception as e:

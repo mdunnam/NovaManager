@@ -39,7 +39,7 @@ class _AnalysisWorker(QThread):
 
     log = pyqtSignal(str)          # progress log line
     progress = pyqtSignal(int, int) # current, total
-    finished = pyqtSignal(int, int) # analyzed, rated
+    finished = pyqtSignal(int, int, bool) # analyzed, rated, cancelled
 
     def __init__(self, face_matcher, benchmark_photos: list, photos: list):
         super().__init__()
@@ -54,8 +54,10 @@ class _AnalysisWorker(QThread):
     def run(self):
         analyzed = rated = 0
         total = len(self._photos)
+        cancelled = False
         for idx, photo in enumerate(self._photos, 1):
             if self._stop:
+                cancelled = True
                 self.log.emit('[CANCELLED] Analysis stopped by user.')
                 break
             filepath = photo.get('filepath', '')
@@ -78,7 +80,7 @@ class _AnalysisWorker(QThread):
                 self.progress.emit(idx, total)
             except Exception as e:
                 self.log.emit(f'[WARN] {os.path.basename(filepath)}: {e}')
-        self.finished.emit(analyzed, rated)
+            self.finished.emit(analyzed, rated, cancelled)
 
 
 class FaceMatchingTab(QWidget):
@@ -114,7 +116,13 @@ class FaceMatchingTab(QWidget):
         
         self.matcher_combo = QComboBox()
         self.matcher_combo.addItem("OpenCV (Fast, Lightweight)", "opencv")
-        self.matcher_combo.addItem("DeepFace (Most Accurate)", "deepface")
+        self.matcher_combo.addItem(
+            "DeepFace (Most Accurate)" if DEEPFACE_AVAILABLE else "DeepFace (Unavailable)",
+            "deepface"
+        )
+        if not DEEPFACE_AVAILABLE:
+            item_index = self.matcher_combo.count() - 1
+            self.matcher_combo.setItemData(item_index, False, Qt.ItemDataRole.UserRole + 1)
         self.matcher_combo.currentIndexChanged.connect(self._on_matcher_changed)
         self.matcher_combo.setToolTip(
             "OpenCV: Fast, lightweight, good for most use cases\n"
@@ -403,7 +411,7 @@ class FaceMatchingTab(QWidget):
         if self._worker:
             self._worker.stop()
 
-    def _on_analysis_done(self, analyzed: int, rated: int):
+    def _on_analysis_done(self, analyzed: int, rated: int, cancelled: bool):
         """Persist ratings into the DB and update UI after the worker finishes."""
         self._progress_bar.setVisible(False)
         self._cancel_btn.setVisible(False)
@@ -415,20 +423,26 @@ class FaceMatchingTab(QWidget):
                 nr = photo.get('_new_rating')
                 if nr is not None:
                     try:
-                        self.controller.db.update_photo(photo['id'], face_match_rating=nr)
+                        self.controller.db.update_photo(
+                            photo['id'],
+                            face_match_rating=nr,
+                            face_similarity=float(photo.get('_similarity') or 0),
+                        )
                     except Exception:
                         pass
 
-        self.face_log_output.append(f'\n[COMPLETE] Analysed: {analyzed}, Rated: {rated}')
+        summary_label = 'CANCELLED' if cancelled else 'COMPLETE'
+        self.face_log_output.append(f'\n[{summary_label}] Analysed: {analyzed}, Rated: {rated}')
         self.load_face_similarity_results()
         if self.controller.statusBar():
             self.controller.statusBar().showMessage(
-                f'Face analysis done — {analyzed} analysed, {rated} rated.', 5000
+                f'Face analysis {"cancelled" if cancelled else "done"} — {analyzed} analysed, {rated} rated.', 5000
             )
-        QMessageBox.information(
-            self, 'Analysis Complete',
-            f'Analysed {analyzed} photos.\n{rated} photos received ratings.'
-        )
+        if not cancelled:
+            QMessageBox.information(
+                self, 'Analysis Complete',
+                f'Analysed {analyzed} photos.\n{rated} photos received ratings.'
+            )
 
     def apply_filter(self):
         """Filter results table by minimum star rating."""
@@ -519,8 +533,9 @@ class FaceMatchingTab(QWidget):
                 rating_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.face_results_table.setItem(row, 3, rating_item)
                 
-                # Confidence (placeholder)
-                confidence_item = QTableWidgetItem("-")
+                # Confidence
+                similarity = float(photo.get('face_similarity') or 0)
+                confidence_item = QTableWidgetItem(f'{similarity:.3f}' if similarity > 0 else '-')
                 confidence_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.face_results_table.setItem(row, 4, confidence_item)
                 
@@ -581,6 +596,8 @@ class FaceMatchingTab(QWidget):
             self.matcher_type = self.matcher_combo.currentData()
             
             if self.matcher_type == "deepface":
+                if not DEEPFACE_AVAILABLE or FaceMatcherDeepFace is None:
+                    raise RuntimeError('DeepFace is not installed in this environment.')
                 self.face_log_output.append("[INFO] Initializing DeepFace matcher (Facenet model)...")
                 self.face_matcher = FaceMatcherDeepFace(
                     model_name="Facenet",
