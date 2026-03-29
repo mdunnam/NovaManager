@@ -89,6 +89,7 @@ class PhotoDatabase:
                 ("exposure_score", "REAL DEFAULT 0.5"),
                 ("quality", "TEXT DEFAULT ''"),
                 ("quality_issues", "TEXT DEFAULT ''"),
+                ("quality_score", "REAL DEFAULT 0.0"),
                 ("file_hash", "TEXT DEFAULT ''"),
             ]
             for col_name, col_def in new_cols:
@@ -249,6 +250,7 @@ class PhotoDatabase:
         ''')
 
         self.conn.commit()
+        self._create_indexes()
         self.migrate_schema()
         self.migrate_vocabulary_descriptions()
         self.init_vocabularies()
@@ -470,6 +472,42 @@ class PhotoDatabase:
         
         return photos
     
+    def _create_indexes(self):
+        """Create performance indexes if they don't already exist."""
+        indexes = [
+            'CREATE INDEX IF NOT EXISTS idx_photos_status ON photos(status)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_file_hash ON photos(file_hash)',
+            'CREATE INDEX IF NOT EXISTS idx_photos_perceptual_hash ON photos(perceptual_hash)',
+            'CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status ON scheduled_posts(status, scheduled_time)',
+            'CREATE INDEX IF NOT EXISTS idx_posting_history_photo ON posting_history(photo_id)',
+            'CREATE INDEX IF NOT EXISTS idx_posting_history_platform ON posting_history(platform, date_posted)',
+            'CREATE INDEX IF NOT EXISTS idx_album_photos_album ON album_photos(album_id)',
+            'CREATE INDEX IF NOT EXISTS idx_album_photos_photo ON album_photos(photo_id)',
+        ]
+        for stmt in indexes:
+            try:
+                self.cursor.execute(stmt)
+            except Exception:
+                pass
+        self.conn.commit()
+
+    def get_correction_examples(self, limit: int = 10) -> list:
+        """Return top AI correction examples for prompt context."""
+        try:
+            self.cursor.execute('''
+                SELECT field_name, original_value, corrected_value, COUNT(*) AS count
+                FROM ai_corrections
+                WHERE original_value IS NOT NULL
+                  AND corrected_value IS NOT NULL
+                  AND original_value != corrected_value
+                GROUP BY field_name, original_value, corrected_value
+                ORDER BY count DESC, correction_date DESC
+                LIMIT ?
+            ''', (limit,))
+            return [tuple(r) for r in self.cursor.fetchall()]
+        except Exception:
+            return []
+
     def migrate_schema(self):
         """Migrate old schema to new status column"""
         try:

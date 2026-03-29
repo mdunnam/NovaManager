@@ -50,7 +50,11 @@ def extract_exif(filepath: str) -> dict:
         img = Image.open(filepath)
         result['image_width'], result['image_height'] = img.size
 
-        raw_exif = img._getexif()
+        try:
+            raw_exif_obj = img.getexif()
+            raw_exif = dict(raw_exif_obj) if raw_exif_obj else None
+        except AttributeError:
+            raw_exif = getattr(img, '_getexif', lambda: None)()
         if not raw_exif:
             return result
 

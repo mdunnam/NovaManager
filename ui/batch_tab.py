@@ -355,6 +355,8 @@ class BatchTab(QWidget):
         wm_form.addRow('', wm_btn)
         layout.addWidget(wm_group)
 
+        self._op_buttons = [rename_btn, export_btn, zip_btn, resize_btn, wm_btn]
+
         layout.addStretch()
         scroll.setWidget(container)
         outer.addWidget(scroll)
@@ -448,6 +450,8 @@ class BatchTab(QWidget):
         self._worker.log.connect(self.log_edit.append)
         self._worker.finished.connect(self._on_done)
         self._worker.start()
+        for btn in getattr(self, '_op_buttons', []):
+            btn.setEnabled(False)
 
     def _build_params(self, operation: str) -> dict | None:
         if operation == 'rename':
@@ -501,6 +505,8 @@ class BatchTab(QWidget):
 
         self.progress_bar.setVisible(False)
         self.cancel_btn.setVisible(False)
+        for btn in getattr(self, '_op_buttons', []):
+            btn.setEnabled(True)
         msg = f'Done: {done} file(s) processed.'
         if errors:
             msg += f' {errors} error(s) — see log.'
@@ -511,3 +517,11 @@ class BatchTab(QWidget):
     def _cancel(self):
         if self._worker:
             self._worker.stop()
+        if getattr(self, '_zip_file', None):
+            try:
+                self._zip_file.close()
+            except Exception:
+                pass
+            self._zip_file = None
+        for btn in getattr(self, '_op_buttons', []):
+            btn.setEnabled(True)

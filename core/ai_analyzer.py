@@ -38,16 +38,7 @@ SUBJECTS = [
 def get_correction_examples(db, limit=10):
     """Get examples of recent user corrections to help AI learn."""
     try:
-        corrections = db.cursor.execute('''
-            SELECT field_name, original_value, corrected_value, COUNT(*) as count
-            FROM ai_corrections
-            WHERE original_value IS NOT NULL
-            AND corrected_value IS NOT NULL
-            AND original_value != corrected_value
-            GROUP BY field_name, original_value, corrected_value
-            ORDER BY count DESC, correction_date DESC
-            LIMIT ?
-        ''', (limit,)).fetchall()
+        corrections = db.get_correction_examples(limit)
 
         if not corrections:
             return ""

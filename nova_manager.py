@@ -59,6 +59,7 @@ from ui.batch_tab import BatchTab
 from ui.history_tab import HistoryTab
 from ui.learning_tab import AILearningTab
 from ui.vocabularies_tab import VocabulariesTab
+from ui.face_matching_tab import FaceMatchingTab
 
 from core.database import PhotoDatabase
 from core.ai_analyzer import analyze_image
@@ -2753,7 +2754,7 @@ class ImageLightboxDialog(QDialog):
         layer = self._current_layer_name()
         state = self.image_canvas.get_layer_state(layer)
         self.image_canvas.set_layer_locked(layer, not bool(state.get("locked", False)))
-        self.image_canvas.save_annotations()
+        self.image_canvas._schedule_autosave()
         self._rebuild_layer_combo()
         self._refresh_layer_controls()
 
@@ -2774,7 +2775,7 @@ class ImageLightboxDialog(QDialog):
             return
         text = self.lighting_prompt_edit.text()
         self.image_canvas.set_layer_lighting_prompt(layer, text)
-        self.image_canvas.save_annotations()
+        self.image_canvas._schedule_autosave()
 
     def _cancel_relight_job(self):
         self._relight_cancelled = True
@@ -2860,7 +2861,7 @@ class ImageLightboxDialog(QDialog):
                 if 0 <= rel_x <= 34:
                     state = self.image_canvas.get_layer_state(layer)
                     self.image_canvas.set_layer_visible(layer, not bool(state.get("visible", True)))
-                    self.image_canvas.save_annotations()
+                    self.image_canvas._schedule_autosave()
                     self.layer_list.setCurrentItem(item)
                     self._refresh_layer_controls()
                     return True
@@ -2984,18 +2985,18 @@ class ImageLightboxDialog(QDialog):
         layer = self._current_layer_name()
         self.layer_opacity_label.setText(f"{int(value)}%")
         self.image_canvas.set_layer_opacity(layer, int(value))
-        self.image_canvas.save_annotations()
+        self.image_canvas._schedule_autosave()
 
     def _on_layer_blend_changed(self, blend):
         layer = self._current_layer_name()
         self.image_canvas.set_layer_blend_mode(layer, blend)
-        self.image_canvas.save_annotations()
+        self.image_canvas._schedule_autosave()
 
     def _move_active_layer(self, direction):
         self.image_canvas.move_active_layer(direction)
         self._rebuild_layer_combo()
         self._refresh_layer_controls()
-        self.image_canvas.save_annotations()
+        self.image_canvas._schedule_autosave()
 
     def _set_tool_mode(self, mode):
         self._ensure_editable_active_layer()
@@ -3019,7 +3020,7 @@ class ImageLightboxDialog(QDialog):
             self.image_canvas.set_layer_locked(layer, False)
             changed = True
         if changed:
-            self.image_canvas.save_annotations()
+            self.image_canvas._schedule_autosave()
             self._rebuild_layer_combo()
             self._refresh_layer_controls()
 
@@ -3732,6 +3733,8 @@ class AnalyzerThread(QThread):
                     for k in ('blur_score', 'exposure_score', 'quality', 'quality_issues'):
                         if k in quality_meta:
                             metadata[k] = quality_meta[k]
+                    if 'blur_score' in quality_meta:
+                        metadata['quality_score'] = quality_meta['blur_score']
                     if p_hash:
                         metadata['perceptual_hash'] = p_hash
                     if f_hash:
@@ -3977,6 +3980,11 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
         except Exception as e:
             print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
+        try:
+            self.face_matching_tab = FaceMatchingTab(self)
+            self.tabs.addTab(self.face_matching_tab, "Face Match")
+        except Exception as e:
+            print(f'Error creating Face Match tab: {e}', file=sys.stderr)
 
         main_layout.addWidget(self.tabs)
         

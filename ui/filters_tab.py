@@ -151,7 +151,7 @@ class FiltersTab(QWidget):
             self.controller.statusBar().showMessage("Filters applied", 3000)
 
     def clear_filters(self):
-        """Reset all filter widgets to default state."""
+        """Reset all filter widgets to default state and refresh the photo table."""
         self.filter_raw.setChecked(False)
         self.filter_needs_edit.setChecked(False)
         self.filter_ready.setChecked(False)
@@ -169,5 +169,10 @@ class FiltersTab(QWidget):
         self.filter_location.clear()
         self.filter_tag.clear()
         self.filter_package.clear()
+        # Refresh the photo table via the controller's clear_filters path
+        if hasattr(self.controller, 'refresh_photos'):
+            self.controller.refresh_photos()
+        if hasattr(self.controller, 'refresh_gallery'):
+            self.controller.refresh_gallery()
         if self.controller.statusBar():
             self.controller.statusBar().showMessage("Filters cleared", 2000)
