@@ -86,7 +86,9 @@ class _BatchWorker(QThread):
         new_fp = fp.parent / (new_stem + fp.suffix)
         if new_fp != fp:
             fp.rename(new_fp)
-            self.log.emit(f'Renamed: {fp.name} → {new_fp.name}')
+            # Store updated path so _on_done can sync the DB
+            photo['_new_filepath'] = str(new_fp)
+            self.log.emit(f'Renamed: {fp.name} \u2192 {new_fp.name}')
 
     def _export(self, photo):
         fp = Path(photo.get('filepath', ''))
@@ -396,8 +398,11 @@ class BatchTab(QWidget):
                     return [self.controller.db.get_photo(i) for i in ids if self.controller.db.get_photo(i)]
             except Exception:
                 pass
+            self.log_edit.append(
+                '[WARN] No photos selected — switch to Photos tab and select photos first.'
+            )
+            return []
         if 'filter' in scope.lower():
-            # Use whatever the gallery currently shows
             try:
                 return list(self.controller.gallery_tab._all_photos)
             except Exception:
@@ -502,6 +507,19 @@ class BatchTab(QWidget):
             except Exception as e:
                 self.log_edit.append(f'Error closing zip: {e}')
             self._zip_file = None
+
+        # Sync renamed filepaths back to the database
+        if self._worker and self._worker.operation == 'rename':
+            for photo in self._worker.photos:
+                new_fp = photo.get('_new_filepath')
+                if new_fp and photo.get('id'):
+                    try:
+                        self.controller.db.update_photo_metadata(
+                            photo['id'],
+                            {'filepath': new_fp, 'filename': Path(new_fp).name}
+                        )
+                    except Exception as e:
+                        self.log_edit.append(f'[WARN] DB sync failed for {Path(new_fp).name}: {e}')
 
         self.progress_bar.setVisible(False)
         self.cancel_btn.setVisible(False)

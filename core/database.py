@@ -17,8 +17,10 @@ class CredentialEncryption:
         self.cipher = Fernet(self.key)
     
     def _generate_key(self):
-        """Generate a consistent encryption key based on machine"""
-        machine_id = hashlib.sha256(b"nova_photo_manager").hexdigest()[:32]
+        """Generate a consistent encryption key based on machine UUID."""
+        import uuid
+        seed = f"nova_photo_manager_{uuid.getnode()}".encode()
+        machine_id = hashlib.sha256(seed).hexdigest()[:32]
         key = base64.urlsafe_b64encode(machine_id.encode().ljust(32, b'0')[:32])
         return key
     
@@ -59,8 +61,9 @@ class PhotoDatabase:
             cols = [row['name'] for row in self.cursor.fetchall()]
 
             new_cols = [
-                ("face_similarity", "INTEGER DEFAULT 0"),
+                ("face_similarity", "REAL DEFAULT 0.0"),
                 ("face_match_rating", "INTEGER DEFAULT 0"),
+                ("flagged", "INTEGER DEFAULT 0"),
                 ("scene_type", "TEXT DEFAULT ''"),
                 ("composition", "TEXT DEFAULT ''"),
                 ("subjects", "TEXT DEFAULT ''"),
@@ -253,6 +256,7 @@ class PhotoDatabase:
         self._create_indexes()
         self.migrate_schema()
         self.migrate_vocabulary_descriptions()
+        self.ensure_album_columns()
         self.init_vocabularies()
 
         # Ensure photo_packages table exists in older DBs
@@ -277,7 +281,7 @@ class PhotoDatabase:
         # Get file creation time
         try:
             date_created = datetime.fromtimestamp(Path(filepath).stat().st_ctime)
-        except:
+        except OSError:
             date_created = None
         
         try:
@@ -303,12 +307,33 @@ class PhotoDatabase:
             self.cursor.execute('SELECT id FROM photos WHERE filepath = ?', (filepath,))
             return self.cursor.fetchone()[0]
     
+    # Allowlist of writable photo columns — prevents arbitrary column injection.
+    _ALLOWED_PHOTO_COLUMNS: frozenset = frozenset({
+        'filepath', 'filename', 'date_created', 'date_modified',
+        'type_of_shot', 'pose', 'facing_direction', 'explicit_level',
+        'color_of_clothing', 'material', 'type_clothing', 'footwear',
+        'interior_exterior', 'location', 'status',
+        'released_instagram', 'released_tiktok', 'released_fansly',
+        'date_released_instagram', 'date_released_tiktok', 'date_released_fansly',
+        'package_name', 'notes', 'tags', 'face_similarity', 'face_match_rating',
+        'scene_type', 'composition', 'subjects', 'dominant_colors',
+        'objects_detected', 'mood', 'ai_caption', 'suggested_hashtags',
+        'perceptual_hash', 'file_size_kb', 'image_width', 'image_height',
+        'color_profile', 'content_rating', 'platform_status',
+        'exif_camera', 'exif_lens', 'exif_focal_length', 'exif_iso',
+        'exif_aperture', 'exif_shutter', 'exif_gps_lat', 'exif_gps_lon',
+        'exif_date_taken', 'blur_score', 'exposure_score', 'quality',
+        'quality_issues', 'quality_score', 'file_hash', 'flagged',
+    })
+
     def update_photo_metadata(self, photo_id, metadata):
-        """Update photo metadata"""
+        """Update photo metadata — only known columns are written."""
         fields = []
         values = []
         
         for key, value in metadata.items():
+            if key not in self._ALLOWED_PHOTO_COLUMNS:
+                continue
             fields.append(f"{key} = ?")
             values.append(value)
         
@@ -404,6 +429,37 @@ class PhotoDatabase:
             'SELECT * FROM photos WHERE face_match_rating > 0 ORDER BY face_match_rating DESC, id DESC'
         )
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def begin_transaction(self):
+        """Begin an explicit SQLite transaction."""
+        self.conn.execute('BEGIN')
+
+    def commit(self):
+        """Commit the current transaction."""
+        self.conn.commit()
+
+    def rollback(self):
+        """Roll back the current transaction."""
+        self.conn.rollback()
+
+    def ensure_album_columns(self):
+        """Add new albums columns to pre-existing databases (safe forward migration)."""
+        try:
+            self.cursor.execute("PRAGMA table_info(albums)")
+            cols = {row['name'] for row in self.cursor.fetchall()}
+            new_cols = [
+                ('cover_photo_id', 'INTEGER REFERENCES photos(id)'),
+                ('is_smart', 'INTEGER DEFAULT 0'),
+                ('smart_filter', "TEXT DEFAULT ''"),
+                ('sort_order', 'INTEGER DEFAULT 0'),
+                ('date_modified', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+            ]
+            for col_name, col_def in new_cols:
+                if col_name not in cols:
+                    self.cursor.execute(f'ALTER TABLE albums ADD COLUMN {col_name} {col_def}')
+            self.conn.commit()
+        except Exception as e:
+            print(f"Warning: could not migrate albums columns: {e}")
     
     def bulk_update(self, photo_ids, updates):
         """Bulk update multiple photos"""
@@ -494,8 +550,8 @@ class PhotoDatabase:
         for stmt in indexes:
             try:
                 self.cursor.execute(stmt)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Index warning: {e}")
         self.conn.commit()
 
     def get_correction_examples(self, limit: int = 10) -> list:
@@ -644,7 +700,7 @@ class PhotoDatabase:
             return [row[0] for row in self.cursor.fetchall()]
     
     def add_vocabulary_value(self, field_name, value, description=None):
-        """Add a new value to field vocabulary"""
+        """Add a new value to field vocabulary. Returns True only if a new row was inserted."""
         value = value.strip().lower()
         if not value:
             return False
@@ -654,8 +710,8 @@ class PhotoDatabase:
                 (field_name, value, description)
             )
             self.conn.commit()
-            return True
-        except:
+            return self.cursor.rowcount > 0
+        except Exception:
             return False
     
     def update_vocabulary_description(self, field_name, value, description):
@@ -667,7 +723,7 @@ class PhotoDatabase:
             )
             self.conn.commit()
             return True
-        except:
+        except Exception:
             return False
     
     def count_vocabulary_usage(self, field_name: str, value: str) -> int:
@@ -692,20 +748,28 @@ class PhotoDatabase:
         )
         self.conn.commit()
     
+    # Shared allowlist for vocabulary field names used in dynamic SQL.
+    _SAFE_VOCAB_FIELDS: frozenset = frozenset({
+        'scene_type', 'mood', 'quality', 'status', 'subjects',
+        'content_rating', 'location', 'package_name', 'tags',
+        'type_of_shot', 'pose', 'facing_direction', 'explicit_level',
+        'color_of_clothing', 'material', 'type_clothing', 'footwear',
+        'interior_exterior',
+    })
+
     def rename_vocabulary_value(self, field_name, old_value, new_value):
-        """Rename a vocabulary value and update all photos using it"""
+        """Rename a vocabulary value and update all photos using it."""
+        if field_name not in self._SAFE_VOCAB_FIELDS:
+            return False
         new_value = new_value.strip().lower()
         if not new_value:
             return False
         
         try:
-            # Update the vocabulary
             self.cursor.execute(
                 'UPDATE vocabularies SET value = ? WHERE field_name = ? AND value = ?',
                 (new_value, field_name, old_value)
             )
-            
-            # Update all photos using this value
             self.cursor.execute(
                 f'UPDATE photos SET {field_name} = ? WHERE {field_name} = ?',
                 (new_value, old_value)
@@ -841,20 +905,13 @@ class PhotoDatabase:
         return default
     
     def cleanup_unused_vocabulary(self, field_name):
-        """Remove vocabulary values that are not used by any photo"""
-        # Get all values in vocabulary
+        """Remove vocabulary values that are not used by any photo."""
+        if field_name not in self._SAFE_VOCAB_FIELDS:
+            return
         vocab = self.get_vocabulary(field_name)
-        
         for value in vocab:
-            # Check if any photo uses this value
-            self.cursor.execute(
-                f'SELECT COUNT(*) FROM photos WHERE {field_name} = ?',
-                (value,)
-            )
-            count = self.cursor.fetchone()[0]
-            
+            count = self.count_vocabulary_usage(field_name, value)
             if count == 0:
-                # Not used, remove it
                 self.remove_vocabulary_value(field_name, value)
     
     def validate_and_constrain(self, field_name, value):

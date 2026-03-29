@@ -241,6 +241,242 @@ def test_date_albums_use_commit_false() -> None:
     assert result is True
 
 
+# ── Round 10 tests ────────────────────────────────────────────────────────────
+
+def _make_in_memory_db():
+    """Return a PhotoDatabase instance backed by an in-memory SQLite database."""
+    import sqlite3
+    from core.database import PhotoDatabase
+    db = PhotoDatabase.__new__(PhotoDatabase)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.conn = conn
+    db.cursor = conn.cursor()
+    db.encryption = None
+    db.db_path = ":memory:"
+    # Execute enough schema to service the tests.
+    db.cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filepath TEXT UNIQUE NOT NULL,
+            filename TEXT NOT NULL,
+            date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_created TIMESTAMP,
+            date_modified TIMESTAMP,
+            type_of_shot TEXT, pose TEXT, facing_direction TEXT,
+            explicit_level TEXT, color_of_clothing TEXT, material TEXT,
+            type_clothing TEXT, footwear TEXT, interior_exterior TEXT,
+            location TEXT, status TEXT DEFAULT 'raw',
+            released_instagram BOOLEAN DEFAULT 0,
+            released_tiktok BOOLEAN DEFAULT 0,
+            released_fansly BOOLEAN DEFAULT 0,
+            date_released_instagram TIMESTAMP,
+            date_released_tiktok TIMESTAMP,
+            date_released_fansly TIMESTAMP,
+            package_name TEXT, notes TEXT, tags TEXT,
+            face_similarity INTEGER DEFAULT 0,
+            face_match_rating INTEGER DEFAULT 0,
+            flagged INTEGER DEFAULT 0,
+            scene_type TEXT DEFAULT '', composition TEXT DEFAULT '',
+            subjects TEXT DEFAULT '', dominant_colors TEXT DEFAULT '',
+            objects_detected TEXT DEFAULT '', mood TEXT DEFAULT '',
+            ai_caption TEXT DEFAULT '', suggested_hashtags TEXT DEFAULT '',
+            perceptual_hash TEXT DEFAULT '', file_size_kb INTEGER DEFAULT 0,
+            image_width INTEGER DEFAULT 0, image_height INTEGER DEFAULT 0,
+            color_profile TEXT DEFAULT '', content_rating TEXT DEFAULT 'general',
+            platform_status TEXT DEFAULT '{}',
+            exif_camera TEXT DEFAULT '', exif_lens TEXT DEFAULT '',
+            exif_focal_length TEXT DEFAULT '', exif_iso TEXT DEFAULT '',
+            exif_aperture TEXT DEFAULT '', exif_shutter TEXT DEFAULT '',
+            exif_gps_lat REAL DEFAULT NULL, exif_gps_lon REAL DEFAULT NULL,
+            exif_date_taken TIMESTAMP DEFAULT NULL,
+            blur_score REAL DEFAULT 0.0, exposure_score REAL DEFAULT 0.5,
+            quality TEXT DEFAULT '', quality_issues TEXT DEFAULT '',
+            quality_score REAL DEFAULT 0.0, file_hash TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS albums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, description TEXT DEFAULT '',
+            cover_photo_id INTEGER, date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sort_order INTEGER DEFAULT 0, is_smart INTEGER DEFAULT 0,
+            smart_filter TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            album_id INTEGER, photo_id INTEGER,
+            sort_order INTEGER DEFAULT 0,
+            date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(album_id, photo_id)
+        );
+        CREATE TABLE IF NOT EXISTS vocabularies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            field_name TEXT NOT NULL, value TEXT NOT NULL,
+            description TEXT, sort_order INTEGER DEFAULT 0,
+            UNIQUE(field_name, value)
+        );
+        CREATE TABLE IF NOT EXISTS photo_packages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            photo_id INTEGER NOT NULL, package_name TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    return db
+
+
+def test_update_photo_metadata_column_allowlist() -> None:
+    """Unknown/injected column names must be silently dropped, not executed."""
+    db = _make_in_memory_db()
+    db.cursor.execute(
+        "INSERT INTO photos (filepath, filename) VALUES (?, ?)",
+        ("/tmp/test.jpg", "test.jpg")
+    )
+    db.conn.commit()
+    photo_id = db.cursor.lastrowid
+
+    # Attempt to inject an unknown column — should not raise, and the table must survive.
+    db.update_photo_metadata(photo_id, {'__injected__': 1, 'status': 'ready'})
+
+    db.cursor.execute("SELECT status FROM photos WHERE id = ?", (photo_id,))
+    row = db.cursor.fetchone()
+    assert row[0] == 'ready', "Valid column status should have been updated"
+
+    # Table must not have gained any new column.
+    db.cursor.execute("PRAGMA table_info(photos)")
+    col_names = {r[1] for r in db.cursor.fetchall()}
+    assert '__injected__' not in col_names, "Injected column must not be created"
+
+
+def test_rename_vocabulary_value_injection_guard() -> None:
+    """rename_vocabulary_value must reject unknown field names."""
+    from core.database import PhotoDatabase
+    db = _make_in_memory_db()
+
+    # Bind the method
+    result = PhotoDatabase.rename_vocabulary_value(db, "'; DROP TABLE photos; --", "a", "b")
+    assert result is False, "rename_vocabulary_value should reject unsafe field names"
+
+    # Original photos table must be intact
+    db.cursor.execute("SELECT COUNT(*) FROM photos")
+    assert db.cursor.fetchone()[0] == 0  # empty but exists
+
+
+def test_cleanup_unused_vocabulary_injection_guard() -> None:
+    """cleanup_unused_vocabulary must reject unknown field names without crashing."""
+    from core.database import PhotoDatabase
+
+    db = _make_in_memory_db()
+    # Should return silently without error or table modification.
+    PhotoDatabase.cleanup_unused_vocabulary(db, "'; DROP TABLE photos; --")
+
+    db.cursor.execute("SELECT COUNT(*) FROM photos")
+    assert db.cursor.fetchone()[0] == 0  # table intact
+
+
+def test_flagged_column_persists() -> None:
+    """The flagged column must be added during ensure_columns and round-trip via update_photo."""
+    db = _make_in_memory_db()
+    db.cursor.execute(
+        "INSERT INTO photos (filepath, filename) VALUES (?, ?)",
+        ("/tmp/flag_test.jpg", "flag_test.jpg")
+    )
+    db.conn.commit()
+    photo_id = db.cursor.lastrowid
+
+    db.update_photo_metadata(photo_id, {'flagged': 1})
+
+    db.cursor.execute("SELECT flagged FROM photos WHERE id = ?", (photo_id,))
+    row = db.cursor.fetchone()
+    assert row[0] == 1, "flagged column should persist after update_photo_metadata"
+
+
+def test_smart_album_missing_filter_controls() -> None:
+    """Smart albums built from released_ig, released_tiktok, unanalyzed, has_exif, has_gps filters."""
+    ctrl = _DummyController()
+    ctrl.db._photos = [
+        {"id": 1, "released_instagram": 1, "released_tiktok": 0,
+         "type_of_shot": "", "exif_camera": "", "exif_gps_lat": None,
+         "scene_type": "", "mood": "", "subjects": "", "quality": "",
+         "content_rating": "general", "tags": "", "location": "", "package_name": ""},
+        {"id": 2, "released_instagram": 0, "released_tiktok": 1,
+         "type_of_shot": "fullbody", "exif_camera": "Canon", "exif_gps_lat": 51.5,
+         "scene_type": "", "mood": "", "subjects": "", "quality": "",
+         "content_rating": "general", "tags": "", "location": "", "package_name": ""},
+    ]
+
+    tab = AlbumsTab(ctrl)
+
+    ig_only = tab._get_smart_album_photos("released_ig")
+    assert [p["id"] for p in ig_only] == [1], "released_ig should match only Instagram-published photos"
+
+    tiktok_only = tab._get_smart_album_photos("released_tiktok")
+    assert [p["id"] for p in tiktok_only] == [2], "released_tiktok should match to TikTok-published photos"
+
+    unanalyzed = tab._get_smart_album_photos("unanalyzed")
+    assert [p["id"] for p in unanalyzed] == [1], "unanalyzed should match photos with empty type_of_shot"
+
+    has_exif = tab._get_smart_album_photos("has_exif")
+    assert [p["id"] for p in has_exif] == [2], "has_exif should match photos with exif_camera set"
+
+    has_gps = tab._get_smart_album_photos("has_gps")
+    assert [p["id"] for p in has_gps] == [2], "has_gps should match photos with exif_gps_lat set"
+
+
+def test_add_vocabulary_value_returns_false_for_duplicate() -> None:
+    """add_vocabulary_value should return False (not True) when value already exists."""
+    db = _make_in_memory_db()
+    from core.database import PhotoDatabase
+
+    result1 = PhotoDatabase.add_vocabulary_value(db, "scene_type", "portrait")
+    assert result1 is True, "First insert should return True"
+
+    result2 = PhotoDatabase.add_vocabulary_value(db, "scene_type", "portrait")
+    assert result2 is False, "Duplicate insert should return False via INSERT OR IGNORE rowcount check"
+
+
+def test_batch_rename_db_sync() -> None:
+    """After a batch rename, the DB filepath/filename should match the new path."""
+    import tempfile
+    import unittest.mock as mock
+    from ui.batch_tab import _BatchWorker
+
+    ctrl = _DummyController()
+    db = _make_in_memory_db()
+    db.cursor.execute(
+        "INSERT INTO photos (filepath, filename) VALUES (?, ?)",
+        ("/tmp/old_name.jpg", "old_name.jpg")
+    )
+    db.conn.commit()
+    photo_id = db.cursor.lastrowid
+    ctrl.db = db
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = os.path.join(tmpdir, "old_name.jpg")
+        open(src, "wb").close()  # create empty file
+
+        photo = {"id": photo_id, "filepath": src, "filename": "old_name.jpg",
+                 "exif_date_taken": None, "date_created": None,
+                 "scene_type": "", "status": "raw"}
+
+        worker = _BatchWorker([photo], "rename", {"pattern": "new_name"})
+
+        done_calls = []
+        worker.finished.connect(lambda d, e: done_calls.append((d, e)))
+        worker.run()
+
+        new_fp = photo.get("_new_filepath")
+        assert new_fp is not None, "Worker should have stored _new_filepath on renamed photo"
+        assert os.path.basename(new_fp) == "new_name.jpg", f"Unexpected new name: {new_fp}"
+
+        # Simulate what _on_done does for the DB sync
+        db.update_photo_metadata(photo_id, {"filepath": new_fp, "filename": os.path.basename(new_fp)})
+
+        db.cursor.execute("SELECT filepath, filename FROM photos WHERE id = ?", (photo_id,))
+        row = db.cursor.fetchone()
+        assert row[0] == new_fp, "DB filepath should be updated after rename"
+        assert row[1] == "new_name.jpg", "DB filename should be updated after rename"
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication([])
 
@@ -250,6 +486,13 @@ def main() -> int:
         ("Face worker finished once", test_face_worker_emits_finished_once),
         ("Face worker cancel flag", test_face_worker_cancel_no_success_dialog),
         ("Date albums atomic transaction", test_date_albums_use_commit_false),
+        ("update_photo_metadata rejects unknown columns", test_update_photo_metadata_column_allowlist),
+        ("rename_vocabulary injection guard", test_rename_vocabulary_value_injection_guard),
+        ("cleanup_vocabulary injection guard", test_cleanup_unused_vocabulary_injection_guard),
+        ("flagged column persists", test_flagged_column_persists),
+        ("Smart album 5 missing filter controls", test_smart_album_missing_filter_controls),
+        ("add_vocabulary_value returns False for duplicate", test_add_vocabulary_value_returns_false_for_duplicate),
+        ("Batch rename DB sync", test_batch_rename_db_sync),
     ]
 
     print("=" * 60)

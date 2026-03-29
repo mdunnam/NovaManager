@@ -403,7 +403,9 @@ class FaceMatchingTab(QWidget):
         self._worker = _AnalysisWorker(self.face_matcher, self.benchmark_photos, photos)
         self._worker.log.connect(self.face_log_output.append)
         self._worker.progress.connect(lambda cur, tot: self._progress_bar.setValue(cur))
-        self._worker.finished.connect(self._on_analysis_done)
+        self._worker.finished.connect(
+            self._on_analysis_done, Qt.ConnectionType.QueuedConnection
+        )
         self._worker.start()
 
     def _cancel_analysis(self):
@@ -428,8 +430,10 @@ class FaceMatchingTab(QWidget):
                             face_match_rating=nr,
                             face_similarity=float(photo.get('_similarity') or 0),
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.face_log_output.append(
+                            f'[WARN] Could not save rating for photo {photo["id"]}: {e}'
+                        )
 
         summary_label = 'CANCELLED' if cancelled else 'COMPLETE'
         self.face_log_output.append(f'\n[{summary_label}] Analysed: {analyzed}, Rated: {rated}')
@@ -510,14 +514,20 @@ class FaceMatchingTab(QWidget):
                 id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.face_results_table.setItem(row, 0, id_item)
                 
-                # Thumbnail
+                # Thumbnail — use cache to avoid full-res decode
                 thumb_label = QLabel()
                 thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 if os.path.exists(photo['filepath']):
-                    pixmap = QPixmap(photo['filepath'])
-                    if not pixmap.isNull():
+                    pix = None
+                    get_thumb = getattr(self.controller, 'get_cached_thumbnail', None)
+                    if get_thumb:
+                        pix = get_thumb(photo['filepath'], 50)
+                    if not pix or pix.isNull():
+                        pix = QPixmap(photo['filepath'])
+                    if pix and not pix.isNull():
                         thumb_label.setPixmap(
-                            pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                            pix.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
                         )
                 self.face_results_table.setCellWidget(row, 1, thumb_label)
                 

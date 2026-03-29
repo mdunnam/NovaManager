@@ -254,6 +254,16 @@ class AlbumsTab(QWidget):
                 v = le.text().strip() if le else ''
                 if v:
                     parts.append(f'{label}={v}')
+            for attr, key in [
+                ('filter_ig', 'released_ig'),
+                ('filter_tiktok', 'released_tiktok'),
+                ('filter_unknowns', 'unanalyzed'),
+                ('filter_has_exif', 'has_exif'),
+                ('filter_has_gps', 'has_gps'),
+            ]:
+                cb = getattr(ft, attr, None)
+                if cb and cb.isChecked():
+                    parts.append(key)
             filter_str = '&'.join(parts)
 
         if not filter_str:
@@ -288,6 +298,20 @@ class AlbumsTab(QWidget):
 
         def matches(photo: dict) -> bool:
             for clause in clauses:
+                # Bare flag keys (no '=') — e.g. released_ig, unanalyzed, has_exif
+                if '=' not in clause:
+                    if clause == 'released_ig' and not photo.get('released_instagram'):
+                        return False
+                    if clause == 'released_tiktok' and not photo.get('released_tiktok'):
+                        return False
+                    if clause == 'unanalyzed' and (photo.get('type_of_shot') or '').strip():
+                        return False
+                    if clause == 'has_exif' and not (photo.get('exif_camera') or '').strip():
+                        return False
+                    if clause == 'has_gps' and not photo.get('exif_gps_lat'):
+                        return False
+                    continue
+
                 key, value = clause.split('=', 1)
                 value = value.strip().lower()
                 if key == 'scene' and (photo.get('scene_type') or '').lower() != value:
@@ -312,6 +336,16 @@ class AlbumsTab(QWidget):
                 if key == 'location' and value not in (photo.get('location') or '').lower():
                     return False
                 if key == 'package' and value not in (photo.get('package_name') or '').lower():
+                    return False
+                if key == 'released_ig' and not photo.get('released_instagram'):
+                    return False
+                if key == 'released_tiktok' and not photo.get('released_tiktok'):
+                    return False
+                if key == 'unanalyzed' and (photo.get('type_of_shot') or '').strip():
+                    return False
+                if key == 'has_exif' and not (photo.get('exif_camera') or '').strip():
+                    return False
+                if key == 'has_gps' and not photo.get('exif_gps_lat'):
                     return False
             return True
 
@@ -452,15 +486,15 @@ class AlbumsTab(QWidget):
 
         created = 0
         try:
-            self.controller.db.conn.execute('BEGIN')
+            self.controller.db.begin_transaction()
             for month_name, photo_ids in months.items():
-                album_id = self.controller.db.create_album(month_name, is_smart=1, commit=False)
+                album_id = self.controller.db.create_album(month_name, is_smart=0, commit=False)
                 for pid in photo_ids:
                     self.controller.db.add_photo_to_album(album_id, pid, commit=False)
                 created += 1
-            self.controller.db.conn.commit()
+            self.controller.db.commit()
         except Exception as e:
-            self.controller.db.conn.rollback()
+            self.controller.db.rollback()
             QMessageBox.critical(self, 'Error', f'Failed to create date albums: {e}')
             return
 
