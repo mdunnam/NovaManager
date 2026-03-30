@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QGroupBox, QFormLayout, QMessageBox, QScrollArea,
-    QTabWidget, QCheckBox, QSpinBox,
+    QTabWidget, QCheckBox, QSpinBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from core.icons import icon as _icon
@@ -181,11 +181,36 @@ class PlatformCard(QGroupBox):
         layout.setContentsMargins(8, 8, 8, 8)
         for key, label, is_secret in fields:
             w = QLineEdit()
-            w.setPlaceholderText(f'Enter {label}')
+            if key == 'redirect_uri':
+                w.setPlaceholderText('http://127.0.0.1:8765/callback')
+            elif key == 'local_media_root':
+                w.setPlaceholderText('e.g. C:/inetpub/wwwroot/photoflow')
+            elif key == 'public_image_base_url':
+                w.setPlaceholderText('https://cdn.example.com/photoflow')
+            else:
+                w.setPlaceholderText(f'Enter {label}')
             if is_secret:
                 w.setEchoMode(QLineEdit.EchoMode.Password)
-            layout.addRow(label + ':', w)
+            if key == 'local_media_root':
+                row_widget = QWidget()
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.addWidget(w)
+                browse_btn = QPushButton('Browse...')
+                browse_btn.setIcon(_icon('folder'))
+                browse_btn.setIconSize(QSize(14, 14))
+                browse_btn.clicked.connect(lambda checked=False, field=w: self._browse_folder(field))
+                row_layout.addWidget(browse_btn)
+                layout.addRow(label + ':', row_widget)
+            else:
+                layout.addRow(label + ':', w)
             self._fields[key] = w
+
+    def _browse_folder(self, field: QLineEdit):
+        """Browse for a local folder and assign it to the given line edit."""
+        folder = QFileDialog.getExistingDirectory(self, 'Select Folder')
+        if folder:
+            field.setText(folder)
 
     def get_credentials(self) -> dict:
         return {k: w.text().strip() for k, w in self._fields.items()}
@@ -220,8 +245,8 @@ class SettingsTab(QWidget):
                 'Requires a Meta app with instagram_basic, instagram_content_publish, '
                 'pages_read_engagement, and pages_show_list scopes. Use Connect in Browser '
                 'to fetch the token and linked Instagram business account. For local files, '
-                'configure Local Media Root + Public Image Base URL so PhotoFlow can map '
-                'a local path to a public URL for the Graph API.'
+                'configure Local Media Root + Public Image Base URL so PhotoFlow can '
+                'auto-stage a copy into a publicly served folder before posting.'
             ),
         },
         'twitter': {
@@ -253,10 +278,14 @@ class SettingsTab(QWidget):
             'fields': [
                 ('access_token', 'Access Token', True),
                 ('board_id', 'Default Board ID', False),
+                ('local_media_root', 'Local Media Root', False),
+                ('public_image_base_url', 'Public Image Base URL', False),
             ],
             'help': (
                 'Create an app at developers.pinterest.com. '
-                'Generate an OAuth2 token with boards:read and pins:write scopes.'
+                'Generate an OAuth2 token with boards:read and pins:write scopes. '
+                'For local files, configure Local Media Root + Public Image Base URL so '
+                'PhotoFlow can auto-stage a copy into a publicly served folder before posting.'
             ),
         },
         'threads': {
@@ -264,11 +293,14 @@ class SettingsTab(QWidget):
             'fields': [
                 ('access_token', 'User Access Token', True),
                 ('user_id', 'Threads User ID', False),
+                ('local_media_root', 'Local Media Root', False),
+                ('public_image_base_url', 'Public Image Base URL', False),
             ],
             'help': (
                 'Uses the Threads API (graph.threads.net). '
                 'Requires threads_basic and threads_content_publish scopes. '
-                'Images must be publicly accessible URLs.'
+                'For local files, configure Local Media Root + Public Image Base URL so '
+                'PhotoFlow can auto-stage a copy into a publicly served folder before posting.'
             ),
         },
     }
@@ -320,6 +352,15 @@ class SettingsTab(QWidget):
                 oauth_btn.clicked.connect(self._start_instagram_oauth)
                 self._instagram_oauth_btn = oauth_btn
                 btn_row.addWidget(oauth_btn)
+
+            if platform_key in ('instagram', 'pinterest', 'threads'):
+                bridge_btn = QPushButton('Test Media Bridge')
+                bridge_btn.setIcon(_icon('folder'))
+                bridge_btn.setIconSize(QSize(16, 16))
+                bridge_btn.clicked.connect(
+                    lambda checked=False, p=platform_key: self._test_media_bridge(p)
+                )
+                btn_row.addWidget(bridge_btn)
 
             test_btn = QPushButton('Test Connection')
             test_btn.setIcon(_icon('broadcast'))
@@ -517,6 +558,44 @@ class SettingsTab(QWidget):
                 pass
 
     # ── Connection testing ───────────────────────────────────────
+
+    def _test_media_bridge(self, platform_key: str):
+        """Stage a sample image into the media bridge and show the resulting public URL."""
+        from core.social.media_bridge import describe_media_bridge, ensure_public_image
+
+        creds = self._cards[platform_key].get_credentials()
+        ok, msg = describe_media_bridge(creds)
+        if not ok:
+            QMessageBox.warning(self, 'Media Bridge', msg)
+            return
+
+        start_dir = creds.get('local_media_root', '').strip()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            f'Select Image for {self._PLATFORMS[platform_key]["title"]}',
+            start_dir,
+            'Images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff);;All Files (*)',
+        )
+        if not file_path:
+            return
+
+        result = ensure_public_image(file_path, creds, platform_key)
+        if not result.success:
+            QMessageBox.warning(self, 'Media Bridge', result.message)
+            return
+
+        QMessageBox.information(
+            self,
+            'Media Bridge Ready',
+            (
+                f'Staged file:\n{result.staged_path}\n\n'
+                f'Public URL:\n{result.public_url}'
+            ),
+        )
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(
+                f'{self._PLATFORMS[platform_key]["title"]} media bridge verified.', 4000
+            )
 
     def _test(self, platform_key: str):
         creds = self._cards[platform_key].get_credentials()

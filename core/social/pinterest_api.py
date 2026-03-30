@@ -17,6 +17,7 @@ except ImportError:
     _HAS_REQUESTS = False
 
 from .base import SocialPlatform, PostResult
+from .media_bridge import describe_media_bridge, ensure_public_image
 
 _API = 'https://api.pinterest.com/v5'
 
@@ -40,7 +41,9 @@ class PinterestAPI(SocialPlatform):
             )
             data = r.json()
             if r.status_code == 200:
-                return True, f"Connected as {data.get('username', '?')}"
+                bridge_ok, bridge_msg = describe_media_bridge(self.credentials)
+                suffix = ' Media bridge ready.' if bridge_ok else f' {bridge_msg}'
+                return True, f"Connected as {data.get('username', '?')}.{suffix}"
             return False, data.get('message', f'HTTP {r.status_code}')
         except Exception as e:
             return False, str(e)
@@ -77,13 +80,9 @@ class PinterestAPI(SocialPlatform):
 
         token = self.credentials['access_token']
         full_caption = self._build_caption(caption, hashtags)
-
-        # Pinterest requires an image URL for standard pin creation
-        if not filepath.startswith('http'):
-            return PostResult(
-                False, self.platform_name,
-                error='Pinterest requires a public image URL. Upload the image to a CDN first.'
-            )
+        media = ensure_public_image(filepath, self.credentials, self.platform_name)
+        if not media.success:
+            return PostResult(False, self.platform_name, error=media.message)
 
         try:
             r = _requests.post(
@@ -99,7 +98,7 @@ class PinterestAPI(SocialPlatform):
                     'alt_text': alt_text[:500] if alt_text else '',
                     'media_source': {
                         'source_type': 'image_url',
-                        'url': filepath,
+                        'url': media.public_url,
                     },
                 },
                 timeout=30

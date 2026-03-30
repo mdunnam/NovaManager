@@ -15,12 +15,18 @@ ENV/
 
 # Databases and local state
 *.db
+*.db-shm
+*.db-wal
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite*
 !data/README.md
 nova_photos.db
 test.db
 *.sqlite*
+*.sqlite-shm
+*.sqlite-wal
 *.bak
 *.tmp
 

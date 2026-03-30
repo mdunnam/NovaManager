@@ -17,6 +17,7 @@ except ImportError:
     _HAS_REQUESTS = False
 
 from .base import SocialPlatform, PostResult
+from .media_bridge import describe_media_bridge, ensure_public_image
 
 _GRAPH = 'https://graph.threads.net/v1.0'
 
@@ -46,7 +47,9 @@ class ThreadsAPI(SocialPlatform):
             data = r.json()
             if 'error' in data:
                 return False, data['error'].get('message', 'API error')
-            return True, f"Connected as @{data.get('username', uid)}"
+            bridge_ok, bridge_msg = describe_media_bridge(self.credentials)
+            suffix = ' Media bridge ready.' if bridge_ok else f' {bridge_msg}'
+            return True, f"Connected as @{data.get('username', uid)}.{suffix}"
         except Exception as e:
             return False, str(e)
 
@@ -65,11 +68,9 @@ class ThreadsAPI(SocialPlatform):
         token = self.credentials['access_token']
         uid = self.credentials['user_id']
         full_caption = self._build_caption(caption, hashtags)
-
-        image_url = filepath if filepath.startswith('http') else None
-        if not image_url:
-            return PostResult(False, self.platform_name,
-                              error='Threads requires a public image URL.')
+        media = ensure_public_image(filepath, self.credentials, self.platform_name)
+        if not media.success:
+            return PostResult(False, self.platform_name, error=media.message)
 
         try:
             # Step 1: Create media container
@@ -77,7 +78,7 @@ class ThreadsAPI(SocialPlatform):
                 f'{_GRAPH}/{uid}/threads',
                 data={
                     'media_type': 'IMAGE',
-                    'image_url': image_url,
+                    'image_url': media.public_url,
                     'text': full_caption,
                     'access_token': token,
                 },

@@ -1,17 +1,5 @@
-"""Instagram Graph API integration for PhotoFlow.
-
-Credentials used by this client:
-    access_token            Long-lived user token.
-    ig_user_id              Instagram Business/Creator account id.
-    page_id                 Linked Facebook Page id.
-    app_id                  Meta app id.
-    app_secret              Meta app secret.
-    redirect_uri            OAuth redirect URI (typically localhost).
-    local_media_root        Optional local folder mapped to a public base URL.
-    public_image_base_url   Optional public CDN/site URL used for local files.
-"""
-from pathlib import Path
-from urllib.parse import quote, urlencode
+"""Instagram Graph API integration for PhotoFlow."""
+from urllib.parse import urlencode
 import time
 
 try:
@@ -21,6 +9,7 @@ except ImportError:
     _HAS_REQUESTS = False
 
 from .base import SocialPlatform, PostResult
+from .media_bridge import describe_media_bridge, ensure_public_image
 
 _GRAPH = 'https://graph.facebook.com/v19.0'
 _SCOPES = [
@@ -171,39 +160,11 @@ class InstagramAPI(SocialPlatform):
                 return False, data['error'].get('message', 'API error')
             account_name = data.get('username') or uid
             account_type = data.get('account_type') or 'unknown'
-            return True, f'Connected as @{account_name} ({account_type})'
+            bridge_ok, bridge_msg = describe_media_bridge(self.credentials)
+            suffix = ' Media bridge ready.' if bridge_ok else f' {bridge_msg}'
+            return True, f'Connected as @{account_name} ({account_type}).{suffix}'
         except Exception as exc:
             return False, str(exc)
-
-    def _resolve_public_image_url(self, filepath: str) -> str:
-        """Return a public image URL for Graph API publishing.
-
-        Instagram requires a publicly reachable image URL. This helper maps a
-        local file path to a public URL when ``public_image_base_url`` is set.
-        """
-        if filepath.startswith('http://') or filepath.startswith('https://'):
-            return filepath
-
-        base_url = (self.credentials.get('public_image_base_url') or '').strip().rstrip('/')
-        if not base_url:
-            return ''
-
-        local_media_root = (self.credentials.get('local_media_root') or '').strip()
-        path = Path(filepath)
-        try:
-            resolved = path.resolve()
-        except Exception:
-            resolved = path
-
-        if local_media_root:
-            try:
-                rel = resolved.relative_to(Path(local_media_root).resolve())
-                rel_parts = [quote(part) for part in rel.parts]
-                return base_url + '/' + '/'.join(rel_parts)
-            except Exception:
-                pass
-
-        return base_url + '/' + quote(resolved.name)
 
     def post_photo(
         self,
@@ -221,24 +182,20 @@ class InstagramAPI(SocialPlatform):
         token = self.credentials['access_token']
         uid = self.credentials['ig_user_id']
         full_caption = self._build_caption(caption, hashtags)
-        image_url = self._resolve_public_image_url(filepath)
+        media = ensure_public_image(filepath, self.credentials, self.platform_name)
 
-        if not image_url:
+        if not media.success:
             return PostResult(
                 False,
                 self.platform_name,
-                error=(
-                    'Instagram requires a public image URL. Configure '
-                    'local_media_root + public_image_base_url in Settings, or use a file '
-                    'path that is already publicly hosted.'
-                ),
+                error=media.message,
             )
 
         try:
             resp = _requests.post(
                 f'{_GRAPH}/{uid}/media',
                 data={
-                    'image_url': image_url,
+                    'image_url': media.public_url,
                     'caption': full_caption,
                     'access_token': token,
                 },
