@@ -2,12 +2,18 @@
 Settings & Connections tab for PhotoFlow.
 Manages social media API credentials (stored encrypted via the DB).
 """
+import time
+import uuid
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QGroupBox, QFormLayout, QMessageBox, QScrollArea,
     QTabWidget, QCheckBox, QSpinBox,
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from core.icons import icon as _icon
 from PyQt6.QtGui import QFont
 
@@ -18,6 +24,145 @@ def _field(placeholder='', echo_mode=None):
     if echo_mode:
         w.setEchoMode(echo_mode)
     return w
+
+
+class _InstagramOAuthWorker(QThread):
+    """Run the Meta OAuth browser flow off the UI thread."""
+
+    completed = pyqtSignal(bool, dict, str)
+
+    def __init__(self, app_id: str, app_secret: str, redirect_uri: str):
+        super().__init__()
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.redirect_uri = redirect_uri
+
+    def _wait_for_code(self, redirect_uri: str, state: str) -> tuple[str, str]:
+        """Listen on the redirect URI and capture the OAuth code."""
+        parsed = urlparse(redirect_uri)
+        if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost'):
+            return '', 'Redirect URI must be a local http://127.0.0.1/... or http://localhost/... address.'
+
+        host = parsed.hostname or '127.0.0.1'
+        port = parsed.port or 80
+        path = parsed.path or '/'
+        result: dict[str, str] = {}
+
+        class _Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                req = urlparse(self.path)
+                if req.path != path:
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b'Not found')
+                    return
+
+                query = parse_qs(req.query)
+                if query.get('state', [''])[0] != state:
+                    result['error'] = 'OAuth state mismatch.'
+                elif 'error' in query:
+                    result['error'] = query.get('error_description', query['error'])[0]
+                elif 'code' in query:
+                    result['code'] = query['code'][0]
+                else:
+                    result['error'] = 'OAuth callback received without a code.'
+
+                html = (
+                    '<html><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;">'
+                    '<h2>PhotoFlow</h2>'
+                    '<p>Instagram authorization received. You can close this browser tab.</p>'
+                    '</body></html>'
+                ).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Content-Length', str(len(html)))
+                self.end_headers()
+                self.wfile.write(html)
+
+            def log_message(self, format, *args):
+                return
+
+        try:
+            server = HTTPServer((host, port), _Handler)
+        except OSError as exc:
+            return '', f'Could not bind local redirect server on {host}:{port}: {exc}'
+
+        server.timeout = 0.5
+        deadline = time.time() + 300
+        while time.time() < deadline and 'code' not in result and 'error' not in result:
+            server.handle_request()
+        server.server_close()
+
+        if 'code' in result:
+            return result['code'], ''
+        if 'error' in result:
+            return '', result['error']
+        return '', 'Timed out waiting for the Instagram OAuth callback.'
+
+    def run(self):
+        from core.social.instagram_api import InstagramAPI
+
+        if not self.app_id or not self.app_secret:
+            self.completed.emit(False, {}, 'Instagram OAuth requires both app_id and app_secret.')
+            return
+
+        state = uuid.uuid4().hex
+        auth_url = InstagramAPI.build_auth_url(self.app_id, self.redirect_uri, state)
+        webbrowser.open(auth_url)
+
+        code, err = self._wait_for_code(self.redirect_uri, state)
+        if err:
+            self.completed.emit(False, {}, err)
+            return
+
+        ok, short_data = InstagramAPI.exchange_code_for_short_lived_token(
+            self.app_id,
+            self.app_secret,
+            self.redirect_uri,
+            code,
+        )
+        if not ok:
+            self.completed.emit(
+                False,
+                {},
+                (short_data.get('error') or {}).get('message', 'Code exchange failed.'),
+            )
+            return
+
+        access_token = short_data.get('access_token', '')
+        expires_in = short_data.get('expires_in', 0)
+
+        ok, long_data = InstagramAPI.exchange_for_long_lived_token(
+            self.app_id,
+            self.app_secret,
+            access_token,
+        )
+        if ok and long_data.get('access_token'):
+            access_token = long_data.get('access_token', access_token)
+            expires_in = long_data.get('expires_in', expires_in)
+
+        ok, account_data = InstagramAPI.discover_connected_instagram_account(access_token)
+        if not ok:
+            self.completed.emit(
+                False,
+                {},
+                (account_data.get('error') or {}).get('message', 'Could not resolve Instagram account.'),
+            )
+            return
+
+        creds = {
+            'app_id': self.app_id,
+            'app_secret': self.app_secret,
+            'redirect_uri': self.redirect_uri,
+            'access_token': access_token,
+            'ig_user_id': account_data.get('ig_user_id', ''),
+            'page_id': account_data.get('page_id', ''),
+            'page_name': account_data.get('page_name', ''),
+            'ig_username': account_data.get('ig_username', ''),
+            'expires_in': str(expires_in or ''),
+        }
+        msg = f"Connected Instagram account @{creds.get('ig_username') or creds['ig_user_id']}"
+        self.completed.emit(True, creds, msg)
 
 
 class PlatformCard(QGroupBox):
@@ -64,13 +209,19 @@ class SettingsTab(QWidget):
             'fields': [
                 ('access_token', 'Access Token', True),
                 ('ig_user_id', 'Instagram User ID', False),
-                ('app_id', 'App ID (optional)', False),
-                ('app_secret', 'App Secret (optional)', True),
+                ('page_id', 'Facebook Page ID', False),
+                ('app_id', 'App ID', False),
+                ('app_secret', 'App Secret', True),
+                ('redirect_uri', 'Redirect URI', False),
+                ('local_media_root', 'Local Media Root', False),
+                ('public_image_base_url', 'Public Image Base URL', False),
             ],
             'help': (
-                'Requires a Facebook Developer App with instagram_basic and '
-                'instagram_content_publish permissions. The account must be a '
-                'Business or Creator account linked to a Facebook Page.'
+                'Requires a Meta app with instagram_basic, instagram_content_publish, '
+                'pages_read_engagement, and pages_show_list scopes. Use Connect in Browser '
+                'to fetch the token and linked Instagram business account. For local files, '
+                'configure Local Media Root + Public Image Base URL so PhotoFlow can map '
+                'a local path to a public URL for the Graph API.'
             ),
         },
         'twitter': {
@@ -126,6 +277,8 @@ class SettingsTab(QWidget):
         super().__init__()
         self.controller = controller
         self._cards: dict[str, PlatformCard] = {}
+        self._instagram_oauth_worker = None
+        self._instagram_oauth_btn = None
         self._build_ui()
         self._load_all_credentials()
 
@@ -159,6 +312,15 @@ class SettingsTab(QWidget):
             save_btn.setIcon(_icon('save'))
             save_btn.setIconSize(QSize(16, 16))
             save_btn.clicked.connect(lambda checked, p=platform_key: self._save(p))
+
+            if platform_key == 'instagram':
+                oauth_btn = QPushButton('Connect in Browser')
+                oauth_btn.setIcon(_icon('link_external'))
+                oauth_btn.setIconSize(QSize(16, 16))
+                oauth_btn.clicked.connect(self._start_instagram_oauth)
+                self._instagram_oauth_btn = oauth_btn
+                btn_row.addWidget(oauth_btn)
+
             test_btn = QPushButton('Test Connection')
             test_btn.setIcon(_icon('broadcast'))
             test_btn.setIconSize(QSize(16, 16))
@@ -281,6 +443,9 @@ class SettingsTab(QWidget):
     def _save(self, platform_key: str):
         card = self._cards[platform_key]
         creds = card.get_credentials()
+        if platform_key == 'instagram' and not creds.get('redirect_uri'):
+            creds['redirect_uri'] = 'http://127.0.0.1:8765/callback'
+            card.set_credentials(creds)
         try:
             self.controller.db.save_credentials(platform_key, creds)
             if self.controller.statusBar():
@@ -289,6 +454,54 @@ class SettingsTab(QWidget):
                 )
         except Exception as e:
             QMessageBox.warning(self, 'Save Error', str(e))
+
+    def _start_instagram_oauth(self):
+        """Start the browser-based Meta OAuth flow for Instagram Graph API."""
+        card = self._cards['instagram']
+        creds = card.get_credentials()
+        app_id = creds.get('app_id', '').strip()
+        app_secret = creds.get('app_secret', '').strip()
+        redirect_uri = creds.get('redirect_uri', '').strip() or 'http://127.0.0.1:8765/callback'
+
+        if not app_id or not app_secret:
+            QMessageBox.warning(
+                self,
+                'Instagram OAuth',
+                'Enter your Meta app_id and app_secret first, then retry Connect in Browser.',
+            )
+            return
+
+        self._instagram_oauth_worker = _InstagramOAuthWorker(app_id, app_secret, redirect_uri)
+        self._instagram_oauth_worker.completed.connect(self._finish_instagram_oauth)
+        if self._instagram_oauth_btn:
+            self._instagram_oauth_btn.setEnabled(False)
+            self._instagram_oauth_btn.setText('Waiting for Browser…')
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage('Opening Meta login in your browser…', 5000)
+        self._instagram_oauth_worker.start()
+
+    def _finish_instagram_oauth(self, success: bool, new_creds: dict, message: str):
+        """Handle completion of the Instagram OAuth browser flow."""
+        if self._instagram_oauth_btn:
+            self._instagram_oauth_btn.setEnabled(True)
+            self._instagram_oauth_btn.setText('Connect in Browser')
+
+        if not success:
+            QMessageBox.warning(self, 'Instagram OAuth', message)
+            return
+
+        card = self._cards['instagram']
+        merged = card.get_credentials()
+        merged.update(new_creds)
+        card.set_credentials(merged)
+        try:
+            self.controller.db.save_credentials('instagram', merged)
+        except Exception:
+            pass
+
+        QMessageBox.information(self, 'Instagram Connected', message)
+        if self.controller.statusBar():
+            self.controller.statusBar().showMessage(message, 5000)
 
     def _clear(self, platform_key: str):
         reply = QMessageBox.question(

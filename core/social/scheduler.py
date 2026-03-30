@@ -1,8 +1,9 @@
+"""Post scheduler background worker for PhotoFlow.
+
+Polls the scheduled_posts table, posts anything due, and retries failures with
+an exponential backoff until max_retries is reached.
 """
-Post scheduler background worker for PhotoFlow.
-Checks the scheduled_posts table and fires posts when their time comes.
-"""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from PyQt6.QtCore import QThread, pyqtSignal
@@ -31,7 +32,34 @@ def _get_api(platform: str, credentials: dict):
     if p == 'threads':
         from core.social.threads_api import ThreadsAPI
         return ThreadsAPI(credentials)
+    if p == 'tiktok':
+        from core.social.tiktok_api import TikTokAPI
+        return TikTokAPI(credentials)
     return None
+
+
+def _parse_timestamp(value: str | None):
+    """Best-effort conversion of a DB timestamp string to a datetime."""
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace('Z', ''))
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _retry_backoff_seconds(attempt_number: int) -> int:
+    """Return the backoff delay for the given retry attempt number."""
+    return min(3600, 60 * (2 ** max(0, attempt_number - 1)))
 
 
 if _QT:
@@ -68,23 +96,55 @@ if _QT:
         def _process_due_posts(self):
             db = PhotoDatabase(self.db_path)
             try:
-                now = datetime.utcnow().isoformat()
-                pending = [
-                    p for p in db.get_scheduled_posts()
-                    if p.get('status') == 'pending'
-                    and p.get('scheduled_time', '') <= now
-                ]
-                for post in pending:
+                now = datetime.utcnow()
+                due_posts = []
+                for post in db.get_scheduled_posts():
+                    status = (post.get('status') or '').lower()
+                    scheduled_at = _parse_timestamp(post.get('scheduled_time'))
+                    next_retry_at = _parse_timestamp(post.get('next_retry_at'))
+                    retry_count = int(post.get('retry_count') or 0)
+                    max_retries = int(post.get('max_retries') or 3)
+
+                    if status == 'pending' and scheduled_at and scheduled_at <= now:
+                        due_posts.append(post)
+                    elif (
+                        status == 'failed'
+                        and retry_count < max_retries
+                        and next_retry_at
+                        and next_retry_at <= now
+                    ):
+                        due_posts.append(post)
+
+                for post in due_posts:
                     self._fire_post(db, post)
             finally:
                 db.close()
 
         def _fire_post(self, db, post: dict):
+            now = datetime.utcnow()
+            attempt_number = int(post.get('retry_count') or 0) + 1
+            db.update_scheduled_post_status(
+                post['id'],
+                'sending',
+                error_msg='',
+                retry_count=attempt_number,
+                last_attempt_at=now.isoformat(),
+                next_retry_at='',
+            )
+
             platform = post.get('platform', '')
             photo = db.get_photo(post['photo_id']) if post.get('photo_id') else None
             if not photo:
-                db.update_scheduled_post_status(post['id'], 'failed')
-                self.post_failed.emit(post, 'Photo not found')
+                msg = 'Photo not found'
+                db.update_scheduled_post_status(
+                    post['id'],
+                    'failed',
+                    error_msg=msg,
+                    retry_count=attempt_number,
+                    last_attempt_at=now.isoformat(),
+                    next_retry_at='',
+                )
+                self.post_failed.emit(post, msg)
                 return
 
             try:
@@ -96,22 +156,65 @@ if _QT:
                 result = api.post_photo(
                     photo.get('filepath', ''),
                     caption=post.get('caption', ''),
-                    hashtags=(post.get('hashtags') or '').split(','),
+                    hashtags=(post.get('hashtags') or '').replace(',', ' ').split(),
                 )
 
                 if result.success:
-                    db.update_scheduled_post_status(post['id'], 'sent',
-                                                    post_url=result.url,
-                                                    post_id_str=result.post_id)
+                    db.update_scheduled_post_status(
+                        post['id'],
+                        'sent',
+                        post_url=result.url,
+                        post_id_str=result.post_id,
+                        error_msg='',
+                        retry_count=attempt_number,
+                        last_attempt_at=now.isoformat(),
+                        next_retry_at='',
+                    )
+                    db.log_post(
+                        photo_id=photo['id'],
+                        platform=platform,
+                        post_type=post.get('post_type', 'post'),
+                        caption=post.get('caption', ''),
+                        post_url=result.url,
+                        post_id=result.post_id,
+                        status='success',
+                    )
                     self.post_sent.emit(post)
                 else:
-                    db.update_scheduled_post_status(post['id'], 'failed',
-                                                    error_msg=result.error)
-                    self.post_failed.emit(post, result.error)
+                    max_retries = int(post.get('max_retries') or 3)
+                    next_retry_at = ''
+                    message = result.error or 'Unknown posting failure'
+                    if attempt_number < max_retries:
+                        retry_in = _retry_backoff_seconds(attempt_number)
+                        next_retry_at = (now + timedelta(seconds=retry_in)).isoformat()
+                        message = f'{message} Retrying in {retry_in}s.'
+                    db.update_scheduled_post_status(
+                        post['id'],
+                        'failed',
+                        error_msg=message,
+                        retry_count=attempt_number,
+                        last_attempt_at=now.isoformat(),
+                        next_retry_at=next_retry_at,
+                    )
+                    self.post_failed.emit(post, message)
 
             except Exception as e:
-                db.update_scheduled_post_status(post['id'], 'failed', error_msg=str(e))
-                self.post_failed.emit(post, str(e))
+                message = str(e)
+                max_retries = int(post.get('max_retries') or 3)
+                next_retry_at = ''
+                if attempt_number < max_retries:
+                    retry_in = _retry_backoff_seconds(attempt_number)
+                    next_retry_at = (now + timedelta(seconds=retry_in)).isoformat()
+                    message = f'{message} Retrying in {retry_in}s.'
+                db.update_scheduled_post_status(
+                    post['id'],
+                    'failed',
+                    error_msg=message,
+                    retry_count=attempt_number,
+                    last_attempt_at=now.isoformat(),
+                    next_retry_at=next_retry_at,
+                )
+                self.post_failed.emit(post, message)
 
         def stop(self):
             self._running = False

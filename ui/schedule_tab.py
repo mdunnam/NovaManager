@@ -17,6 +17,7 @@ from core.icons import icon as _icon
 
 _STATUS_COLORS = {
     'pending': '#e0a020',
+    'sending': '#42a5f5',
     'sent':    '#4caf50',
     'failed':  '#e53935',
     'cancelled': '#888',
@@ -49,7 +50,7 @@ class ScheduleTab(QWidget):
 
         filter_lbl = QLabel('Show:')
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(['All', 'Pending', 'Sent', 'Failed'])
+        self.filter_combo.addItems(['All', 'Pending', 'Sending', 'Sent', 'Failed', 'Cancelled'])
         self.filter_combo.currentTextChanged.connect(self.refresh)
         header_row.addWidget(filter_lbl)
         header_row.addWidget(self.filter_combo)
@@ -157,11 +158,26 @@ class ScheduleTab(QWidget):
                 color = _STATUS_COLORS.get(status, '')
                 if color and col == 3:
                     item.setForeground(QColor(color))
+                    retry_info = []
+                    if post.get('error_message'):
+                        retry_info.append(str(post.get('error_message')))
+                    if post.get('next_retry_at'):
+                        retry_info.append(f"Next retry: {post.get('next_retry_at')}")
+                    if post.get('retry_count'):
+                        retry_info.append(
+                            f"Attempts: {post.get('retry_count')}/{post.get('max_retries') or 3}"
+                        )
+                    if retry_info:
+                        item.setToolTip('\n'.join(retry_info))
                 self.table.setItem(row, col, item)
 
         total = len(posts)
         pending = sum(1 for p in posts if p.get('status') == 'pending')
-        self.count_label.setText(f'{total} total, {pending} pending')
+        sending = sum(1 for p in posts if p.get('status') == 'sending')
+        failed = sum(1 for p in posts if p.get('status') == 'failed')
+        self.count_label.setText(
+            f'{total} total, {pending} pending, {sending} sending, {failed} failed'
+        )
 
     # ── Actions ──────────────────────────────────────────────────
 
@@ -258,7 +274,14 @@ class ScheduleTab(QWidget):
         for post in posts:
             if post.get('status') == 'failed':
                 try:
-                    self.controller.db.update_scheduled_post_status(post['id'], 'pending')
+                    self.controller.db.update_scheduled_post_status(
+                        post['id'],
+                        'pending',
+                        error_msg='',
+                        retry_count=0,
+                        last_attempt_at='',
+                        next_retry_at='',
+                    )
                 except Exception:
                     pass
         self.refresh()

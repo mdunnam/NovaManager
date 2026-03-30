@@ -251,6 +251,10 @@ class PhotoDatabase:
                 post_type TEXT DEFAULT 'feed',
                 scheduled_time TIMESTAMP NOT NULL,
                 status TEXT DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 3,
+                last_attempt_at TIMESTAMP DEFAULT NULL,
+                next_retry_at TIMESTAMP DEFAULT NULL,
                 error_message TEXT DEFAULT '',
                 post_url TEXT DEFAULT '',
                 post_id TEXT DEFAULT '',
@@ -274,6 +278,7 @@ class PhotoDatabase:
         self.migrate_schema()
         self.migrate_vocabulary_descriptions()
         self.ensure_album_columns()
+        self.ensure_scheduled_post_columns()
         self.init_vocabularies()
 
         # Ensure photo_packages table exists in older DBs
@@ -482,6 +487,26 @@ class PhotoDatabase:
             self.conn.commit()
         except Exception as e:
             print(f"Warning: could not migrate albums columns: {e}")
+
+    def ensure_scheduled_post_columns(self):
+        """Add retry-tracking columns to pre-existing scheduled_posts tables."""
+        try:
+            self.cursor.execute("PRAGMA table_info(scheduled_posts)")
+            cols = {row['name'] for row in self.cursor.fetchall()}
+            new_cols = [
+                ('retry_count', 'INTEGER DEFAULT 0'),
+                ('max_retries', 'INTEGER DEFAULT 3'),
+                ('last_attempt_at', 'TIMESTAMP DEFAULT NULL'),
+                ('next_retry_at', 'TIMESTAMP DEFAULT NULL'),
+            ]
+            for col_name, col_def in new_cols:
+                if col_name not in cols:
+                    self.cursor.execute(
+                        f'ALTER TABLE scheduled_posts ADD COLUMN {col_name} {col_def}'
+                    )
+            self.conn.commit()
+        except Exception as e:
+            print(f"Warning: could not migrate scheduled_posts columns: {e}")
     
     def bulk_update(self, photo_ids, updates):
         """Bulk update multiple photos"""
@@ -1188,11 +1213,37 @@ class PhotoDatabase:
             self.save_app_setting('last_vacuum', today)
         except Exception as e:
             print(f'maybe_vacuum error: {e}')
-        """Schedule a post for later"""
+
+    def schedule_post(
+        self,
+        photo_id,
+        platform,
+        caption,
+        hashtags,
+        scheduled_time,
+        post_type='feed',
+        status='pending',
+        post_id='',
+        max_retries=3,
+    ):
+        """Schedule a post for later."""
         self.cursor.execute('''
-            INSERT INTO scheduled_posts (photo_id, platform, caption, hashtags, post_type, scheduled_time, status, post_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (photo_id, platform.lower(), caption, hashtags, post_type, scheduled_time, status, post_id))
+            INSERT INTO scheduled_posts (
+                photo_id, platform, caption, hashtags, post_type,
+                scheduled_time, status, post_id, max_retries
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            photo_id,
+            platform.lower(),
+            caption,
+            hashtags,
+            post_type,
+            scheduled_time,
+            status,
+            post_id,
+            max_retries,
+        ))
         self.conn.commit()
         return self.cursor.lastrowid
 
@@ -1210,12 +1261,41 @@ class PhotoDatabase:
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def update_scheduled_post_status(self, post_id, status, post_url='', post_id_str='', error_msg=''):
-        """Update the status of a scheduled post after sending"""
-        self.cursor.execute('''
-            UPDATE scheduled_posts SET status = ?, post_url = ?, post_id = ?, error_message = ?
-            WHERE id = ?
-        ''', (status, post_url, post_id_str, error_msg, post_id))
+    def update_scheduled_post_status(
+        self,
+        post_id,
+        status,
+        post_url='',
+        post_id_str='',
+        error_msg='',
+        retry_count=None,
+        last_attempt_at=None,
+        next_retry_at=None,
+    ):
+        """Update the status and retry metadata of a scheduled post."""
+        fields = [
+            'status = ?',
+            'post_url = ?',
+            'post_id = ?',
+            'error_message = ?',
+        ]
+        params = [status, post_url, post_id_str, error_msg]
+
+        if retry_count is not None:
+            fields.append('retry_count = ?')
+            params.append(int(retry_count))
+        if last_attempt_at is not None:
+            fields.append('last_attempt_at = ?')
+            params.append(last_attempt_at)
+        if next_retry_at is not None:
+            fields.append('next_retry_at = ?')
+            params.append(next_retry_at)
+
+        params.append(post_id)
+        self.cursor.execute(
+            f'UPDATE scheduled_posts SET {", ".join(fields)} WHERE id = ?',
+            params,
+        )
         self.conn.commit()
 
     def delete_scheduled_post(self, post_id: int) -> bool:

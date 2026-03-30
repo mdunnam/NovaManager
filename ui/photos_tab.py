@@ -19,10 +19,9 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
     QCheckBox,
-    QShortcut,
 )
 from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QPixmap, QKeySequence
+from PyQt6.QtGui import QPixmap, QKeySequence, QShortcut
 from core.icons import icon as _icon
 
 
