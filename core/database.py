@@ -48,9 +48,11 @@ class PhotoDatabase:
         self.create_tables()
     
     def connect(self):
-        """Connect to the database"""
+        """Connect to the database and enable WAL journal mode for better concurrency."""
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute('PRAGMA journal_mode=WAL')
+        self.conn.execute('PRAGMA foreign_keys=ON')
         self.cursor = self.conn.cursor()
         self.ensure_columns()
     
@@ -94,6 +96,10 @@ class PhotoDatabase:
                 ("quality_issues", "TEXT DEFAULT ''"),
                 ("quality_score", "REAL DEFAULT 0.0"),
                 ("file_hash", "TEXT DEFAULT ''"),
+                ("is_trashed", "INTEGER DEFAULT 0"),
+                ("date_trashed", "TIMESTAMP DEFAULT NULL"),
+                ("alt_text", "TEXT DEFAULT ''"),
+                ("custom_metadata", "TEXT DEFAULT '{}'"),
             ]
             for col_name, col_def in new_cols:
                 if col_name not in cols:
@@ -252,6 +258,17 @@ class PhotoDatabase:
             )
         ''')
 
+        # Caption templates table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS caption_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                body TEXT DEFAULT '',
+                platform TEXT DEFAULT '',
+                date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         self.conn.commit()
         self._create_indexes()
         self.migrate_schema()
@@ -398,9 +415,14 @@ class PhotoDatabase:
         row = self.cursor.fetchone()
         return dict(row) if row else None
     
-    def get_all_photos(self, filters=None):
-        """Get all photos with optional filters"""
+    def get_all_photos(self, filters=None, include_trashed: bool = False):
+        """Return all active (non-trashed) photos with optional filters.
+
+        Pass ``include_trashed=True`` to include trashed records.
+        """
         query = 'SELECT * FROM photos WHERE 1=1'
+        if not include_trashed:
+            query += ' AND (is_trashed IS NULL OR is_trashed = 0)'
         params = []
         
         if filters:
@@ -467,9 +489,58 @@ class PhotoDatabase:
             self.update_photo_metadata(photo_id, updates)
     
     def delete_photo(self, photo_id):
-        """Delete a photo from database"""
+        """Hard-delete a photo record from the database (bypasses trash)."""
         self.cursor.execute('DELETE FROM photos WHERE id = ?', (photo_id,))
         self.conn.commit()
+
+    def move_to_trash(self, photo_id: int) -> bool:
+        """Soft-delete a photo by marking it as trashed.
+
+        The record remains in the database and can be restored.  The
+        physical file on disk is NOT touched.
+        """
+        try:
+            self.cursor.execute(
+                "UPDATE photos SET is_trashed = 1, date_trashed = CURRENT_TIMESTAMP WHERE id = ?",
+                (photo_id,),
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"move_to_trash error: {e}")
+            return False
+
+    def restore_from_trash(self, photo_id: int) -> bool:
+        """Restore a previously trashed photo back to the active library."""
+        try:
+            self.cursor.execute(
+                "UPDATE photos SET is_trashed = 0, date_trashed = NULL WHERE id = ?",
+                (photo_id,),
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"restore_from_trash error: {e}")
+            return False
+
+    def get_trashed_photos(self) -> list:
+        """Return all photos currently in the trash, newest first."""
+        self.cursor.execute(
+            "SELECT * FROM photos WHERE is_trashed = 1 ORDER BY date_trashed DESC"
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def empty_trash(self) -> int:
+        """Permanently delete all trashed photo records.
+
+        Returns the number of records removed.
+        """
+        self.cursor.execute("SELECT id FROM photos WHERE is_trashed = 1")
+        ids = [r[0] for r in self.cursor.fetchall()]
+        if ids:
+            self.cursor.execute("DELETE FROM photos WHERE is_trashed = 1")
+            self.conn.commit()
+        return len(ids)
     
     def add_tag_to_photo(self, photo_id, tag):
         """Add a tag to a photo"""
@@ -997,8 +1068,126 @@ class PhotoDatabase:
         )
         self.conn.commit()
 
-    # --- Scheduled post helpers ---
-    def schedule_post(self, photo_id, platform, caption, hashtags, scheduled_time, post_type='feed', status='pending', post_id=''):
+    # ── Credential aliases (short names used by Settings/Composer tabs) ──────
+
+    def save_credentials(self, platform: str, credentials: dict) -> bool:
+        """Alias for ``store_api_credentials``."""
+        return self.store_api_credentials(platform, credentials)
+
+    def get_credentials(self, platform: str) -> dict:
+        """Alias for ``get_api_credentials``."""
+        return self.get_api_credentials(platform)
+
+    # ── Caption templates ────────────────────────────────────────────────────
+
+    def create_caption_template(self, name: str, body: str, platform: str = '') -> int:
+        """Persist a new caption template. Returns the new row id."""
+        self.cursor.execute(
+            '''
+            INSERT INTO caption_templates (name, body, platform)
+            VALUES (?, ?, ?)
+            ''',
+            (name.strip(), body.strip(), platform.lower()),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_caption_templates(self, platform: str = '') -> list:
+        """Return all saved templates, optionally filtered by platform."""
+        if platform:
+            self.cursor.execute(
+                'SELECT * FROM caption_templates WHERE platform = ? OR platform = "" ORDER BY name',
+                (platform.lower(),),
+            )
+        else:
+            self.cursor.execute('SELECT * FROM caption_templates ORDER BY name')
+        return [dict(r) for r in self.cursor.fetchall()]
+
+    def update_caption_template(self, template_id: int, name: str, body: str, platform: str = '') -> bool:
+        """Update an existing caption template."""
+        try:
+            self.cursor.execute(
+                'UPDATE caption_templates SET name=?, body=?, platform=? WHERE id=?',
+                (name.strip(), body.strip(), platform.lower(), template_id),
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f'update_caption_template error: {e}')
+            return False
+
+    def delete_caption_template(self, template_id: int) -> bool:
+        """Delete a caption template by id."""
+        try:
+            self.cursor.execute('DELETE FROM caption_templates WHERE id=?', (template_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f'delete_caption_template error: {e}')
+            return False
+
+    # ── Stash helpers ────────────────────────────────────────────────────────
+
+    def get_stash_album_id(self) -> int:
+        """Return the id of the singleton Stash album, creating it if needed."""
+        self.cursor.execute("SELECT id FROM albums WHERE name='__stash__' LIMIT 1")
+        row = self.cursor.fetchone()
+        if row:
+            return row[0]
+        self.cursor.execute(
+            "INSERT INTO albums (name, description, is_smart) VALUES ('__stash__', 'Stash', 0)"
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def stash_photo(self, photo_id: int) -> bool:
+        """Add a photo to the Stash collection (idempotent)."""
+        album_id = self.get_stash_album_id()
+        return self.add_photo_to_album(album_id, photo_id)
+
+    def unstash_photo(self, photo_id: int) -> bool:
+        """Remove a photo from the Stash collection."""
+        album_id = self.get_stash_album_id()
+        self.remove_photo_from_album(album_id, photo_id)
+        return True
+
+    def get_stash_photos(self) -> list:
+        """Return all photos currently in the Stash."""
+        album_id = self.get_stash_album_id()
+        return self.get_album_photos(album_id)
+
+    def is_stashed(self, photo_id: int) -> bool:
+        """Return True if the photo is currently in the Stash."""
+        album_id = self.get_stash_album_id()
+        self.cursor.execute(
+            'SELECT 1 FROM album_photos WHERE album_id=? AND photo_id=?',
+            (album_id, photo_id),
+        )
+        return self.cursor.fetchone() is not None
+
+    # ── VACUUM (called on startup, non-blocking) ─────────────────────────────────
+
+    def maybe_vacuum(self) -> None:
+        """Run ANALYZE + VACUUM at most once per week to keep the DB compact.
+
+        The last vacuum date is persisted in app settings so repeated startups
+        don't repeat the work.
+        """
+        try:
+            from datetime import date
+            last = self.get_app_setting('last_vacuum', '')
+            today = date.today().isoformat()
+            try:
+                last_date = date.fromisoformat(last)
+            except ValueError:
+                last_date = None
+            if last_date and (date.today() - last_date).days < 7:
+                return
+            self.conn.execute('ANALYZE')
+            self.conn.execute('VACUUM')
+            self.save_app_setting('last_vacuum', today)
+        except Exception as e:
+            print(f'maybe_vacuum error: {e}')
         """Schedule a post for later"""
         self.cursor.execute('''
             INSERT INTO scheduled_posts (photo_id, platform, caption, hashtags, post_type, scheduled_time, status, post_id)
@@ -1028,16 +1217,6 @@ class PhotoDatabase:
             WHERE id = ?
         ''', (status, post_url, post_id_str, error_msg, post_id))
         self.conn.commit()
-
-    # --- Credential aliases (short names used by new UI tabs) ---
-
-    def save_credentials(self, platform: str, credentials: dict) -> bool:
-        """Alias for store_api_credentials."""
-        return self.store_api_credentials(platform, credentials)
-
-    def get_credentials(self, platform: str) -> dict:
-        """Alias for get_api_credentials."""
-        return self.get_api_credentials(platform)
 
     def delete_scheduled_post(self, post_id: int) -> bool:
         """Delete a scheduled post record by id."""

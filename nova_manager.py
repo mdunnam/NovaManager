@@ -57,6 +57,7 @@ from ui.settings_tab import SettingsTab
 from ui.duplicates_tab import DuplicatesTab
 from ui.batch_tab import BatchTab
 from ui.history_tab import HistoryTab
+from ui.trash_tab import TrashTab
 from ui.learning_tab import AILearningTab
 from ui.vocabularies_tab import VocabulariesTab
 from ui.face_matching_tab import FaceMatchingTab
@@ -3966,25 +3967,29 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f'Error creating History tab: {e}', file=sys.stderr)
         try:
+            self.trash_tab = TrashTab(self)
+            self.tabs.addTab(self.trash_tab, "Trash")
+        except Exception as e:
+            print(f'Error creating Trash tab: {e}', file=sys.stderr)
+        try:
             self.settings_tab = SettingsTab(self)
             self.tabs.addTab(self.settings_tab, "Settings")
         except Exception as e:
             print(f'Error creating Settings tab: {e}', file=sys.stderr)
+        # Nova-specific tabs: instantiated for backward-compat but hidden from the tab bar.
+        # Re-add with self.tabs.addTab(...) when/if they are generalised for PhotoFlow.
         try:
             self.learning_tab = AILearningTab(self)
-            self.tabs.addTab(self.learning_tab, "AI Learning")
         except Exception as e:
-            print(f'Error creating AI Learning tab: {e}', file=sys.stderr)
+            print(f'Warning: AI Learning tab could not be created: {e}', file=sys.stderr)
         try:
             self.vocabularies_tab = VocabulariesTab(self)
-            self.tabs.addTab(self.vocabularies_tab, "Vocabularies")
         except Exception as e:
-            print(f'Error creating Vocabularies tab: {e}', file=sys.stderr)
+            print(f'Warning: Vocabularies tab could not be created: {e}', file=sys.stderr)
         try:
             self.face_matching_tab = FaceMatchingTab(self)
-            self.tabs.addTab(self.face_matching_tab, "Face Match")
         except Exception as e:
-            print(f'Error creating Face Match tab: {e}', file=sys.stderr)
+            print(f'Warning: Face Match tab could not be created: {e}', file=sys.stderr)
 
         main_layout.addWidget(self.tabs)
         
@@ -4029,6 +4034,132 @@ class MainWindow(QMainWindow):
                 self.gallery_tab.refresh()
         except Exception as e:
             print(f"initial gallery refresh error: {e}")
+
+        # Run ANALYZE/VACUUM at most once per week (non-blocking on first call)
+        try:
+            self.db.maybe_vacuum()
+        except Exception:
+            pass
+
+        # Show onboarding wizard on first run (no photos and no folder set)
+        QTimer.singleShot(600, self._maybe_show_onboarding)
+
+    def _maybe_show_onboarding(self):
+        """Show the first-run wizard if the DB has no photos and no folder is configured."""
+        try:
+            photos = self.db.get_all_photos()
+            folder = self.folder_input.text().strip() if hasattr(self, 'folder_input') else ''
+            already_seen = self.settings.value('onboarding_done', False, type=bool)
+            if not already_seen and not photos and not folder:
+                self._show_onboarding_wizard()
+        except Exception as e:
+            print(f'onboarding check error: {e}')
+
+    def _show_onboarding_wizard(self):
+        """Multi-step first-run wizard: choose folder, theme, AI, and profile."""
+        from PyQt6.QtWidgets import (
+            QWizard, QWizardPage, QFileDialog, QVBoxLayout,
+            QLabel, QLineEdit, QPushButton, QHBoxLayout, QComboBox, QCheckBox,
+        )
+
+        wizard = QWizard(self)
+        wizard.setWindowTitle('Welcome to PhotoFlow')
+        wizard.setMinimumSize(540, 380)
+        wizard.setOptions(
+            QWizard.WizardOption.NoBackButtonOnStartPage |
+            QWizard.WizardOption.NoCancelButtonOnLastPage
+        )
+
+        # ── Page 1: Welcome ──────────────────────────────────────
+        p1 = QWizardPage()
+        p1.setTitle('Welcome to PhotoFlow')
+        p1.setSubTitle(
+            'Let\'s get you set up in just a few steps.\n'
+            'You can change any of these settings later in Settings & Connections.'
+        )
+        layout1 = QVBoxLayout(p1)
+        layout1.addWidget(QLabel(
+            'PhotoFlow is a local photo manager with AI-powered analysis\n'
+            'and multi-platform social media publishing.\n\n'
+            'Click Next to begin.'
+        ))
+        wizard.addPage(p1)
+
+        # ── Page 2: Choose photo folder ─────────────────────────
+        p2 = QWizardPage()
+        p2.setTitle('Choose Your Photo Folder')
+        p2.setSubTitle('Select the root folder that contains your photos.')
+        layout2 = QVBoxLayout(p2)
+        folder_row = QHBoxLayout()
+        folder_edit = QLineEdit()
+        folder_edit.setPlaceholderText('e.g. C:/Photos')
+        folder_edit.registerField('photo_folder', folder_edit)
+        browse2 = QPushButton('Browse…')
+        browse2.clicked.connect(lambda: folder_edit.setText(
+            QFileDialog.getExistingDirectory(wizard, 'Choose Photo Folder') or folder_edit.text()
+        ))
+        folder_row.addWidget(folder_edit)
+        folder_row.addWidget(browse2)
+        layout2.addLayout(folder_row)
+        subfolders_cb = QCheckBox('Include subfolders')
+        subfolders_cb.setChecked(True)
+        layout2.addWidget(subfolders_cb)
+        wizard.addPage(p2)
+
+        # ── Page 3: Theme ────────────────────────────────────────
+        p3 = QWizardPage()
+        p3.setTitle('Choose Your Theme')
+        layout3 = QVBoxLayout(p3)
+        layout3.addWidget(QLabel('Pick the colour theme you prefer:'))
+        theme_combo = QComboBox()
+        theme_combo.addItems(['Default (light)', 'Dark'])
+        theme_combo.currentTextChanged.connect(
+            lambda t: self.apply_theme('Dark' if 'Dark' in t else 'Default')
+        )
+        layout3.addWidget(theme_combo)
+        wizard.addPage(p3)
+
+        # ── Page 4: AI ───────────────────────────────────────────
+        p4 = QWizardPage()
+        p4.setTitle('AI Analysis')
+        layout4 = QVBoxLayout(p4)
+        layout4.addWidget(QLabel(
+            'PhotoFlow uses Ollama + LLaVA to automatically analyse your photos.\n\n'
+            'Ollama must be installed and running on your machine.\n'
+            'If you haven\'t set it up yet, you can enable it later in Settings.'
+        ))
+        ai_cb = QCheckBox('Automatically analyse photos on import (recommended)')
+        ai_cb.setChecked(True)
+        layout4.addWidget(ai_cb)
+        wizard.addPage(p4)
+
+        # ── Page 5: Done ─────────────────────────────────────────
+        p5 = QWizardPage()
+        p5.setTitle('All Done!')
+        p5.setSubTitle('Click Finish to open your library.')
+        layout5 = QVBoxLayout(p5)
+        layout5.addWidget(QLabel(
+            'Your settings have been saved.\n\n'
+            'Tip: Press / to focus the search bar, Space to approve a photo,\n'
+            'and Ctrl+Delete to move photos to Trash.'
+        ))
+        wizard.addPage(p5)
+
+        if wizard.exec() == QWizard.DialogCode.Accepted:
+            # Apply chosen folder
+            folder = folder_edit.text().strip()
+            if folder and os.path.exists(folder):
+                if hasattr(self, 'folder_input'):
+                    self.folder_input.setText(folder)
+                if hasattr(self, 'subfolder_checkbox'):
+                    self.subfolder_checkbox.setChecked(subfolders_cb.isChecked())
+
+            # Apply chosen theme
+            theme = 'Dark' if 'Dark' in theme_combo.currentText() else 'Default'
+            self.settings.setValue('ui_theme', theme)
+            self.apply_theme(theme)
+
+            self.settings.setValue('onboarding_done', True)
 
     def _append_retouch_audit(self, entry):
         """Append a JSONL audit record for retouch operations."""
@@ -4646,12 +4777,13 @@ class MainWindow(QMainWindow):
         )
 
     def apply_theme(self, theme_name: str):
-        """Apply the Default theme (base.qss + default.qss)."""
+        """Apply a UI theme (Default = light, Dark = dark mode)."""
         try:
             base_dir = Path(__file__).parent
             theme_dir = base_dir / "themes"
             theme_map = {
                 "Default": theme_dir / "default.qss",
+                "Dark":    theme_dir / "dark.qss",
             }
             base_qss_path = theme_dir / "base.qss"
             qss_parts = []
@@ -4703,6 +4835,160 @@ class MainWindow(QMainWindow):
         help_menu = self.menuBar().addMenu("&Help")
         about_action = help_menu.addAction("&About PhotoFlow")
         about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addSeparator()
+        shortcuts_action = help_menu.addAction("&Keyboard Shortcuts")
+        shortcuts_action.triggered.connect(self._show_shortcuts_dialog)
+
+        # Tools menu — populated from plugins/ on every open
+        tools_menu = self.menuBar().addMenu("&Tools")
+        tools_menu.aboutToShow.connect(lambda: self._populate_tools_menu(tools_menu))
+
+        self._install_global_shortcuts()
+
+    def _install_global_shortcuts(self):
+        """Register application-wide keyboard shortcuts on the main window."""
+        # Space — mark selected/checked photos as Ready
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self._shortcut_approve)
+        # Ctrl+Delete — move selected/checked photos to Trash
+        QShortcut(QKeySequence("Ctrl+Delete"), self, activated=self._shortcut_trash)
+        # Ctrl+A — select all photos in Library tab
+        QShortcut(QKeySequence("Ctrl+A"), self, activated=self._shortcut_select_all)
+        # Ctrl+D — deselect all photos
+        QShortcut(QKeySequence("Ctrl+D"), self, activated=self._shortcut_deselect_all)
+        # Ctrl+E — open editor for selected photo
+        QShortcut(QKeySequence("Ctrl+E"), self, activated=self._shortcut_open_editor)
+        # Ctrl+C — switch to Compose tab
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._shortcut_compose)
+
+    def _populate_tools_menu(self, menu):
+        """Rebuild the Tools menu from plugins/ each time it is opened."""
+        menu.clear()
+        open_plugins_dir = menu.addAction("Open Plugins Folder")
+        open_plugins_dir.triggered.connect(self._open_plugins_folder)
+        menu.addSeparator()
+        try:
+            from core.plugin_manager import discover_plugins
+            plugins = discover_plugins()
+        except Exception:
+            plugins = []
+        if not plugins:
+            empty_action = menu.addAction("(no plugins found)")
+            empty_action.setEnabled(False)
+        for plugin in plugins:
+            action = menu.addAction(plugin['name'])
+            if plugin.get('description'):
+                action.setToolTip(plugin['description'])
+            action.triggered.connect(lambda checked, p=plugin: self._run_plugin(p))
+
+    def _open_plugins_folder(self):
+        """Open the plugins/ directory in the OS file explorer."""
+        import subprocess
+        from pathlib import Path
+        plugins_dir = str(Path(__file__).parent / 'plugins')
+        try:
+            subprocess.Popen(['explorer', plugins_dir])
+        except Exception:
+            try:
+                subprocess.Popen(['xdg-open', plugins_dir])
+            except Exception:
+                QMessageBox.information(self, 'Plugins Folder', plugins_dir)
+
+    def _run_plugin(self, plugin: dict):
+        """Run a plugin with the currently selected photos."""
+        try:
+            photos = [self.db.get_photo(pid) for pid in self.get_target_photo_ids()]
+            photos = [p for p in photos if p]
+            if not photos:
+                photos = self.db.get_all_photos()
+            from core.plugin_manager import run_plugin
+            result = run_plugin(plugin, photos, self.db)
+            if result:
+                QMessageBox.information(self, plugin['name'], result)
+                if self.statusBar():
+                    self.statusBar().showMessage(result[:120], 5000)
+        except Exception as e:
+            QMessageBox.critical(self, 'Plugin Error', str(e))
+
+    def _shortcut_approve(self):
+        """Space: mark selected/checked photos as Ready."""
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            return
+        for pid in target_ids:
+            self.db.update_photo_metadata(pid, {'status': 'ready'})
+        if hasattr(self, 'photos_tab'):
+            self.photos_tab.refresh()
+        if self.statusBar():
+            self.statusBar().showMessage(f"Marked {len(target_ids)} photo(s) as Ready", 2000)
+
+    def _shortcut_trash(self):
+        """Ctrl+Delete: move selected/checked photos to Trash."""
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Move to Trash",
+            f"Move {len(target_ids)} photo(s) to the Trash?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        for pid in target_ids:
+            self.db.move_to_trash(pid)
+        if hasattr(self, 'photos_tab'):
+            self.photos_tab.refresh()
+        if hasattr(self, 'gallery_tab'):
+            self.gallery_tab.refresh()
+        if self.statusBar():
+            self.statusBar().showMessage(f"Moved {len(target_ids)} photo(s) to Trash", 3000)
+
+    def _shortcut_select_all(self):
+        """Ctrl+A: select all photos in Library tab."""
+        if hasattr(self, 'photos_tab'):
+            self.photos_tab.select_all_photos()
+
+    def _shortcut_deselect_all(self):
+        """Ctrl+D: deselect all photos."""
+        if hasattr(self, 'photos_tab'):
+            self.photos_tab.deselect_all_photos()
+
+    def _shortcut_open_editor(self):
+        """Ctrl+E: open the editor for the first selected/checked photo."""
+        target_ids = self.get_target_photo_ids()
+        if not target_ids:
+            return
+        photo = self.db.get_photo(next(iter(target_ids)))
+        if photo:
+            self.open_photo_editor(photo)
+
+    def _shortcut_compose(self):
+        """Ctrl+Shift+C: switch to the Compose tab."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == 'Compose':
+                self.tabs.setCurrentIndex(i)
+                break
+
+    def _show_shortcuts_dialog(self):
+        """Display a reference dialog listing all keyboard shortcuts."""
+        shortcuts = [
+            ("Space",          "Mark selected photos as Ready"),
+            ("Ctrl+Delete",    "Move selected photos to Trash"),
+            ("Ctrl+A",         "Select all photos in Library"),
+            ("Ctrl+D",         "Deselect all photos"),
+            ("Ctrl+E",         "Open editor for first selected photo"),
+            ("Ctrl+Shift+C",   "Switch to Compose tab"),
+            ("Ctrl+1",         "Switch to Gallery tab"),
+            ("Ctrl+2",         "Switch to Library tab"),
+            ("Ctrl+3",         "Switch to Filters tab"),
+            ("F5",             "Refresh photos"),
+            ("Ctrl+,",         "Preferences"),
+            ("/",              "Focus Library search bar (from Library tab)"),
+        ]
+        lines = "\n".join(f"  {k:<22} {v}" for k, v in shortcuts)
+        QMessageBox.information(self, "Keyboard Shortcuts", lines)
+
+
 
     def show_about_dialog(self):
         """Show an About dialog"""
@@ -4746,15 +5032,13 @@ class MainWindow(QMainWindow):
         theme_layout = QVBoxLayout()
         theme_layout.addWidget(QLabel("UI Theme:"))
         theme_combo = QComboBox()
-        theme_combo.addItems([
-            "Default"
-        ]) 
-        # Default to Default if previous value isn’t available
+        theme_combo.addItems(["Default", "Dark"])
         preferred = self.settings.value("ui_theme", "Default")
         if preferred in [theme_combo.itemText(i) for i in range(theme_combo.count())]:
             theme_combo.setCurrentText(preferred)
         else:
             theme_combo.setCurrentText("Default")
+        theme_combo.currentTextChanged.connect(self.apply_theme)
         theme_layout.addWidget(theme_combo)
         theme_group.setLayout(theme_layout)
         layout.addWidget(theme_group)
@@ -4886,6 +5170,22 @@ class MainWindow(QMainWindow):
         self.subfolder_checkbox = QCheckBox("Include Subfolders")
         self.subfolder_checkbox.setChecked(True)
         options_row.addWidget(self.subfolder_checkbox)
+
+        # Import profile selector
+        options_row.addWidget(QLabel("Profile:"))
+        self.import_profile_combo = QComboBox()
+        self.import_profile_combo.setMaximumWidth(180)
+        self.import_profile_combo.setToolTip(
+            "Import preset: controls auto-analysis, default status, and default tags"
+        )
+        self._import_profiles = {
+            "Default":       {"auto_analyze": True,  "default_status": "unreviewed", "default_tags": ""},
+            "Vacation":      {"auto_analyze": True,  "default_status": "unreviewed", "default_tags": "travel,vacation"},
+            "Product Shoot": {"auto_analyze": True,  "default_status": "needs_edit", "default_tags": "product"},
+            "Quick Import":  {"auto_analyze": False, "default_status": "unreviewed", "default_tags": ""},
+        }
+        self.import_profile_combo.addItems(list(self._import_profiles.keys()))
+        options_row.addWidget(self.import_profile_combo)
         options_row.addStretch()
         
         self.analyze_btn = QPushButton("Analyze Images")
@@ -5637,22 +5937,27 @@ class MainWindow(QMainWindow):
         )
     
     def start_analysis(self):
-        """Start analyzing images"""
+        """Start analyzing images, respecting the selected import profile."""
         folder = self.folder_input.text()
         if not folder or not os.path.exists(folder):
             QMessageBox.warning(self, "Error", "Please select a valid folder")
             return
-        
+
+        # Apply import profile defaults
+        profile_name = self.import_profile_combo.currentText()
+        profile = self._import_profiles.get(profile_name, self._import_profiles["Default"])
+        self._active_import_profile = profile
+
         self.analyze_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         self._live_gallery_update_count = 0
-        
+
         self.analyzer_thread = AnalyzerThread(
             folder,
             self.subfolder_checkbox.isChecked(),
-            self.db.db_path  # Use configured DB path
+            self.db.db_path
         )
         self.analyzer_thread.progress.connect(self.update_progress)
         self.analyzer_thread.photo_analyzed.connect(self.handle_photo_analyzed)
@@ -5662,6 +5967,21 @@ class MainWindow(QMainWindow):
 
     def handle_photo_analyzed(self, photo):
         """Update Library and Gallery incrementally as photos are analyzed."""
+        # Apply active import profile defaults to newly imported photos
+        try:
+            profile = getattr(self, '_active_import_profile', {})
+            updates = {}
+            if profile.get('default_status') and not photo.get('status'):
+                updates['status'] = profile['default_status']
+            if profile.get('default_tags'):
+                existing = photo.get('tags', '') or ''
+                extra = profile['default_tags']
+                updates['tags'] = (existing.rstrip(',') + ',' + extra).strip(',') if existing else extra
+            if updates:
+                self.db.update_photo_metadata(photo['id'], updates)
+        except Exception:
+            pass
+
         self.add_photo_to_table(photo)
         self._live_gallery_update_count += 1
 

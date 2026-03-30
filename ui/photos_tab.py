@@ -19,9 +19,10 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
     QCheckBox,
+    QShortcut,
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QPixmap, QKeySequence
 from core.icons import icon as _icon
 
 
@@ -55,12 +56,29 @@ class PhotosTab(QWidget):
         self._batch_undo_stack = []
         self._max_batch_undo = 5
         self._custom_smart_presets = []
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self._apply_search_filter)
+        self._search_query = ''
         self._build_ui()
         self._load_custom_smart_presets()
         self.refresh()
 
+        # Shortcut: '/' focuses the search bar from anywhere within this tab
+        QShortcut(QKeySequence('/'), self, activated=self._focus_search)
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
+
+        # ── Quick-search bar ──────────────────────────────────────
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Search:"))
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Filter by filename, tags, scene, location, notes, caption…  (/ to focus)")
+        self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.textChanged.connect(self._on_search_text_changed)
+        search_row.addWidget(self.search_bar)
+        layout.addLayout(search_row)
 
         # Top toolbar
         toolbar = QHBoxLayout()
@@ -376,11 +394,43 @@ class PhotosTab(QWidget):
             self.batch_settings_label.setText(self.controller.get_batch_retouch_settings_label())
 
     # API methods
+    # ── Search helpers ──────────────────────────────────────────────────
+
+    def _focus_search(self):
+        """Give keyboard focus to the search bar."""
+        self.search_bar.setFocus()
+        self.search_bar.selectAll()
+
+    def _on_search_text_changed(self, text: str):
+        """Debounce search input and trigger filtering after 250 ms."""
+        self._search_query = text.strip().lower()
+        self._search_timer.stop()
+        self._search_timer.start(250)
+
+    def _apply_search_filter(self):
+        """Re-render the table applying the current search query without a full DB reload."""
+        self.refresh()
+
+    # ── Data loading ────────────────────────────────────────────────────
+
     def refresh(self):
-        """Reload all photos and repopulate table."""
+        """Reload all photos and repopulate table, respecting the active search query."""
         self._refresh_batch_settings_label()
         self.photo_table.setRowCount(0)
         photos = self.controller.db.get_all_photos()
+
+        # Apply in-memory search filter when query is present
+        q = self._search_query
+        if q:
+            _search_fields = (
+                'filename', 'ai_caption', 'suggested_hashtags', 'tags',
+                'objects_detected', 'location', 'subjects', 'scene_type',
+                'mood', 'notes', 'exif_camera', 'package_name',
+            )
+            photos = [
+                p for p in photos
+                if any(q in str(p.get(f) or '').lower() for f in _search_fields)
+            ]
 
         for i, photo in enumerate(photos):
             self.photo_table.insertRow(i)

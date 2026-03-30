@@ -30,7 +30,7 @@ ollama pull llava
 
 3. Run the application:
 ```bash
-python nova_manager.py
+python photoflow.py
 ```
 
 ## Usage
@@ -50,7 +50,8 @@ All metadata is stored in a SQLite database at `data/photos.db` (auto-created on
 
 ```
 PhotoFlow/
-├── nova_manager.py          # Main application entry point
+├── photoflow.py             # Main application entry point
+├── nova_manager.py          # Core application module (imported by photoflow.py)
 ├── core/                    # Core business logic
 │   ├── database.py          # SQLite database management
 │   ├── ai_analyzer.py       # AI photo analysis (LLaVA/Ollama)

@@ -7,9 +7,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QScrollArea, QGridLayout, QSplitter,
     QLineEdit, QMessageBox, QFrame, QTextEdit, QGroupBox,
-    QFormLayout, QMenu,
+    QFormLayout, QMenu, QCompleter,
 )
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtCore import Qt, QTimer, QSize, QStringListModel
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont, QAction
 from core.icons import icon as _icon
 
@@ -170,8 +170,15 @@ class GalleryTab(QWidget):
         post_btn.setEnabled(False)
         post_btn.setObjectName('detail_post_btn')
         post_btn.clicked.connect(self._post_this)
+        self.stash_btn = QPushButton('Stash')
+        self.stash_btn.setIcon(_icon('pin'))
+        self.stash_btn.setIconSize(QSize(16, 16))
+        self.stash_btn.setEnabled(False)
+        self.stash_btn.setToolTip('Add/remove from Stash (quick collection)')
+        self.stash_btn.clicked.connect(self._toggle_stash)
         action_row.addWidget(self.open_btn)
         action_row.addWidget(post_btn)
+        action_row.addWidget(self.stash_btn)
         self._detail_post_btn = post_btn
         inner_layout.addLayout(action_row)
 
@@ -202,6 +209,12 @@ class GalleryTab(QWidget):
         self.gallery_objects.setPlaceholderText('comma-separated')
         self.gallery_tags = QLineEdit()
         self.gallery_tags.setPlaceholderText('comma-separated')
+        # Tag autocomplete — model is populated when a photo is loaded
+        self._tag_completer_model = QStringListModel()
+        _tag_completer = QCompleter(self._tag_completer_model, self.gallery_tags)
+        _tag_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        _tag_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.gallery_tags.setCompleter(_tag_completer)
         self.gallery_package = QLineEdit()
 
         edit_form.addRow('Scene:', self.gallery_scene)
@@ -229,6 +242,24 @@ class GalleryTab(QWidget):
         ai_layout.addWidget(gen_cap_btn)
         ai_layout.addWidget(QLabel('Hashtags:'))
         ai_layout.addWidget(self.gallery_hashtags)
+
+        # Alt text
+        alt_row = QHBoxLayout()
+        self.gallery_alt_text = QLineEdit()
+        self.gallery_alt_text.setPlaceholderText('Accessibility alt text…')
+        self.gallery_alt_text.setToolTip(
+            'Short description for screen readers (accessibility). '  
+            'Used by Instagram and Twitter when posting.'
+        )
+        gen_alt_btn = QPushButton('Generate')
+        gen_alt_btn.setIcon(_icon('sparkle'))
+        gen_alt_btn.setIconSize(QSize(14, 14))
+        gen_alt_btn.setToolTip('Generate alt text with AI')
+        gen_alt_btn.clicked.connect(self._generate_alt_text)
+        alt_row.addWidget(self.gallery_alt_text)
+        alt_row.addWidget(gen_alt_btn)
+        ai_layout.addWidget(QLabel('Alt text:'))
+        ai_layout.addLayout(alt_row)
         inner_layout.addWidget(ai_group)
 
         # EXIF
@@ -587,6 +618,22 @@ class GalleryTab(QWidget):
         self.gallery_package.setText(photo.get('package_name') or '')
         self.gallery_caption.setPlainText(photo.get('ai_caption') or '')
         self.gallery_hashtags.setText(photo.get('suggested_hashtags') or '')
+        self.gallery_alt_text.setText(photo.get('alt_text') or '')
+
+        # Refresh tag autocomplete from all known tags in the DB
+        try:
+            all_tags = [t for t, _ in self.controller.db.get_all_tags()]
+            self._tag_completer_model.setStringList(all_tags)
+        except Exception:
+            pass
+
+        # Update stash button state
+        try:
+            is_stashed = self.controller.db.is_stashed(photo['id'])
+            self.stash_btn.setText('Unstash' if is_stashed else 'Stash')
+        except Exception:
+            pass
+        self.stash_btn.setEnabled(True)
 
         # EXIF
         self.exif_camera.setText(photo.get('exif_camera') or '—')
@@ -630,6 +677,7 @@ class GalleryTab(QWidget):
             'package_name': self.gallery_package.text().strip(),
             'ai_caption': self.gallery_caption.toPlainText().strip(),
             'suggested_hashtags': self.gallery_hashtags.text().strip(),
+            'alt_text': self.gallery_alt_text.text().strip(),
         }
 
         # Track corrections for AI learning
@@ -705,6 +753,75 @@ class GalleryTab(QWidget):
                 self.controller.statusBar().showMessage('Caption generated.', 3000)
         except Exception as e:
             QMessageBox.warning(self, 'Caption Error', str(e))
+
+    # ── Alt text generator ───────────────────────────────────────
+
+    def _generate_alt_text(self):
+        """Generate accessibility alt text via Ollama for the selected photo."""
+        if not self.current_gallery_photo_id:
+            QMessageBox.information(self, 'No Photo', 'Select a photo first.')
+            return
+        photo = self.controller.db.get_photo(self.current_gallery_photo_id)
+        if not photo:
+            return
+        # Use stored alt_text first
+        if photo.get('alt_text'):
+            self.gallery_alt_text.setText(photo['alt_text'])
+            return
+
+        fp = photo.get('filepath', '')
+        if not fp or not os.path.exists(fp):
+            QMessageBox.warning(self, 'Alt Text', 'Photo file not found.')
+            return
+        try:
+            import ollama
+            creds = self.controller.db.get_credentials('ollama') or {}
+            model = creds.get('model') or 'llava:latest'
+            with open(fp, 'rb') as fh:
+                img_bytes = fh.read()
+            resp = ollama.chat(
+                model=model,
+                messages=[{
+                    'role': 'user',
+                    'content': (
+                        'In one concise sentence (under 125 characters), describe this image '
+                        'for a screen reader. Focus on the main subject and action.'
+                    ),
+                    'images': [img_bytes],
+                }],
+            )
+            alt = resp['message']['content'].strip()
+            self.gallery_alt_text.setText(alt)
+            self.controller.db.update_photo_metadata(
+                self.current_gallery_photo_id, {'alt_text': alt}
+            )
+            if self.controller.statusBar():
+                self.controller.statusBar().showMessage('Alt text generated.', 3000)
+        except ImportError:
+            QMessageBox.warning(self, 'Alt Text', 'ollama package not installed.')
+        except Exception as e:
+            QMessageBox.warning(self, 'Alt Text Error', str(e))
+
+    # ── Stash ────────────────────────────────────────────────────
+
+    def _toggle_stash(self):
+        """Add or remove the current photo from the Stash collection."""
+        if not self.current_gallery_photo_id:
+            return
+        try:
+            db = self.controller.db
+            if db.is_stashed(self.current_gallery_photo_id):
+                db.unstash_photo(self.current_gallery_photo_id)
+                self.stash_btn.setText('Stash')
+                msg = 'Removed from Stash.'
+            else:
+                db.stash_photo(self.current_gallery_photo_id)
+                self.stash_btn.setText('Unstash')
+                msg = 'Added to Stash.'
+            if self.controller.statusBar():
+                self.controller.statusBar().showMessage(msg, 2000)
+        except Exception as e:
+            QMessageBox.warning(self, 'Stash', str(e))
 
     # ── Quick actions ────────────────────────────────────────────
 

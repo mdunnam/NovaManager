@@ -51,6 +51,10 @@ class _BatchWorker(QThread):
                     self._resize(photo)
                 elif self.operation == 'watermark':
                     self._watermark(photo)
+                elif self.operation == 'strip_exif':
+                    self._strip_exif(photo)
+                elif self.operation == 'convert':
+                    self._convert(photo)
                 done += 1
             except Exception as e:
                 errors += 1
@@ -190,6 +194,73 @@ class _BatchWorker(QThread):
             out = fp.parent / (fp.stem + '_wm' + fp.suffix)
         out_img.save(out)
         self.log.emit(f'Watermarked: {fp.name} → {out.name}')
+
+    def _strip_exif(self, photo):
+        """Remove all EXIF / metadata from an image using Pillow (privacy tool)."""
+        fp = Path(photo.get('filepath', ''))
+        if not fp.exists():
+            raise FileNotFoundError(fp)
+        try:
+            from PIL import Image
+        except ImportError:
+            raise RuntimeError('Pillow not installed')
+        dest_dir = self.params.get('dest_dir', '')
+        overwrite = self.params.get('overwrite', False)
+
+        img = Image.open(fp)
+        # Create a clean copy with no metadata
+        clean_data = img.tobytes()
+        clean_img = Image.frombytes(img.mode, img.size, clean_data)
+
+        if dest_dir:
+            Path(dest_dir).mkdir(parents=True, exist_ok=True)
+            out = Path(dest_dir) / fp.name
+        elif overwrite:
+            out = fp
+        else:
+            out = fp.parent / (fp.stem + '_noexif' + fp.suffix)
+
+        save_kwargs = {}
+        if fp.suffix.lower() in ('.jpg', '.jpeg'):
+            save_kwargs['quality'] = 95
+            save_kwargs['subsampling'] = 0
+        clean_img.save(out, **save_kwargs)
+        self.log.emit(f'EXIF stripped: {fp.name} → {out.name}')
+
+    def _convert(self, photo):
+        """Convert image to a different format (e.g. HEIC → JPG, PNG → JPG)."""
+        fp = Path(photo.get('filepath', ''))
+        if not fp.exists():
+            raise FileNotFoundError(fp)
+        try:
+            from PIL import Image
+        except ImportError:
+            raise RuntimeError('Pillow not installed')
+        target_fmt = self.params.get('target_format', 'jpg').lower().lstrip('.')
+        quality = int(self.params.get('quality', 90))
+        dest_dir = self.params.get('dest_dir', '')
+
+        ext_map = {'jpg': '.jpg', 'jpeg': '.jpg', 'png': '.png', 'webp': '.webp', 'bmp': '.bmp', 'tiff': '.tiff'}
+        new_ext = ext_map.get(target_fmt, '.' + target_fmt)
+
+        img = Image.open(fp)
+        if target_fmt in ('jpg', 'jpeg') and img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+
+        if dest_dir:
+            Path(dest_dir).mkdir(parents=True, exist_ok=True)
+            out = Path(dest_dir) / (fp.stem + new_ext)
+        else:
+            out = fp.parent / (fp.stem + new_ext)
+
+        save_kwargs = {}
+        if target_fmt in ('jpg', 'jpeg'):
+            save_kwargs['quality'] = quality
+            save_kwargs['optimize'] = True
+        elif target_fmt == 'webp':
+            save_kwargs['quality'] = quality
+        img.save(out, **save_kwargs)
+        self.log.emit(f'Converted: {fp.name} → {out.name}')
 
     def stop(self):
         self._running = False
@@ -357,7 +428,61 @@ class BatchTab(QWidget):
         wm_form.addRow('', wm_btn)
         layout.addWidget(wm_group)
 
-        self._op_buttons = [rename_btn, export_btn, zip_btn, resize_btn, wm_btn]
+        # ── Strip EXIF ───────────────────────────────────────────
+        strip_group = QGroupBox('Strip EXIF / Metadata (Privacy)')
+        strip_form = QFormLayout(strip_group)
+        strip_form.addRow('', QLabel(
+            'Removes all embedded metadata (GPS, camera model, timestamps) from images.\n'
+            'Original files are preserved unless Overwrite originals is checked.'
+        ))
+        self.strip_dest = QLineEdit()
+        self.strip_dest.setPlaceholderText('Output folder (blank = save alongside with _noexif suffix)')
+        browse_strip = QPushButton()
+        browse_strip.setIcon(_icon('folder'))
+        browse_strip.setIconSize(QSize(16, 16))
+        browse_strip.clicked.connect(lambda: self._browse(self.strip_dest))
+        strip_row = QHBoxLayout()
+        strip_row.addWidget(self.strip_dest)
+        strip_row.addWidget(browse_strip)
+        strip_form.addRow('Output folder:', strip_row)
+        self.strip_overwrite = QCheckBox('Overwrite originals (no backup!)')
+        strip_form.addRow('', self.strip_overwrite)
+        strip_btn = QPushButton('Strip EXIF')
+        strip_btn.setIcon(_icon('privacy'))
+        strip_btn.setIconSize(QSize(16, 16))
+        strip_btn.clicked.connect(lambda: self._run('strip_exif'))
+        strip_form.addRow('', strip_btn)
+        layout.addWidget(strip_group)
+
+        # ── Format Convert ───────────────────────────────────────
+        convert_group = QGroupBox('Convert Image Format')
+        convert_form = QFormLayout(convert_group)
+        self.convert_format = QComboBox()
+        self.convert_format.addItems(['jpg', 'png', 'webp', 'bmp', 'tiff'])
+        convert_form.addRow('Target format:', self.convert_format)
+        self.convert_quality = QSpinBox()
+        self.convert_quality.setRange(1, 100)
+        self.convert_quality.setValue(90)
+        self.convert_quality.setSuffix(' % (JPEG/WebP quality)')
+        convert_form.addRow('Quality:', self.convert_quality)
+        self.convert_dest = QLineEdit()
+        self.convert_dest.setPlaceholderText('Output folder (blank = save alongside with new extension)')
+        browse_conv = QPushButton()
+        browse_conv.setIcon(_icon('folder'))
+        browse_conv.setIconSize(QSize(16, 16))
+        browse_conv.clicked.connect(lambda: self._browse(self.convert_dest))
+        conv_row = QHBoxLayout()
+        conv_row.addWidget(self.convert_dest)
+        conv_row.addWidget(browse_conv)
+        convert_form.addRow('Output folder:', conv_row)
+        convert_btn = QPushButton('Convert Files')
+        convert_btn.setIcon(_icon('refresh'))
+        convert_btn.setIconSize(QSize(16, 16))
+        convert_btn.clicked.connect(lambda: self._run('convert'))
+        convert_form.addRow('', convert_btn)
+        layout.addWidget(convert_group)
+
+        self._op_buttons = [rename_btn, export_btn, zip_btn, resize_btn, wm_btn, strip_btn, convert_btn]
 
         layout.addStretch()
         scroll.setWidget(container)
@@ -495,6 +620,17 @@ class BatchTab(QWidget):
                 'position': self.wm_position.currentText(),
                 'opacity': self.wm_opacity.value(),
                 'dest_dir': self.wm_dest.text().strip(),
+            }
+        if operation == 'strip_exif':
+            return {
+                'dest_dir': self.strip_dest.text().strip(),
+                'overwrite': self.strip_overwrite.isChecked(),
+            }
+        if operation == 'convert':
+            return {
+                'target_format': self.convert_format.currentText(),
+                'quality': self.convert_quality.value(),
+                'dest_dir': self.convert_dest.text().strip(),
             }
         return {}
 

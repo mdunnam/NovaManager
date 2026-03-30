@@ -81,7 +81,7 @@ class PublishTab(QWidget):
         stage_group = QGroupBox('Stage Selected Photos')
         stage_layout = QHBoxLayout(stage_group)
         stage_layout.addWidget(QLabel('Mark as staged for:'))
-        for platform in ['Instagram', 'TikTok', 'Twitter', 'Facebook']:
+        for platform in ['Instagram', 'TikTok', 'Twitter', 'Facebook', 'Pinterest', 'Threads']:
             btn = QPushButton(platform)
             pkey = platform.lower()
             if pkey in _PLATFORM_ICONS:

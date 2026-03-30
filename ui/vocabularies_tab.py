@@ -47,16 +47,13 @@ class VocabulariesTab(QWidget):
         field_layout.addWidget(QLabel("Field:"))
         self.vocab_field_selector = QComboBox()
         self.vocab_field_selector.addItems([
-            "type_of_shot",
-            "pose",
-            "facing_direction",
-            "explicit_level",
-            "color_of_clothing",
-            "material",
-            "type_clothing",
-            "footwear",
-            "interior_exterior",
+            "scene_type",
+            "composition",
+            "subjects",
+            "mood",
+            "content_rating",
             "location",
+            "objects_detected",
         ])
         self.vocab_field_selector.currentTextChanged.connect(self.load_vocabulary_for_field)
         field_layout.addWidget(self.vocab_field_selector)

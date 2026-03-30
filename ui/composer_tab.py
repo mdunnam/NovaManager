@@ -118,8 +118,14 @@ class ComposerTab(QWidget):
         suggest_tags_btn.setIcon(_icon('hashtag'))
         suggest_tags_btn.setIconSize(QSize(16, 16))
         suggest_tags_btn.clicked.connect(self._suggest_hashtags)
+        template_btn = QPushButton('Templates…')
+        template_btn.setIcon(_icon('template'))
+        template_btn.setIconSize(QSize(16, 16))
+        template_btn.setToolTip('Load or save caption templates')
+        template_btn.clicked.connect(self._open_template_picker)
         ai_row.addWidget(suggest_caption_btn)
         ai_row.addWidget(suggest_tags_btn)
+        ai_row.addWidget(template_btn)
         ai_row.addStretch()
         right_layout.addLayout(ai_row)
 
@@ -509,3 +515,102 @@ class ComposerTab(QWidget):
         self.char_counter.setText('')
         for cb in self._platform_checks.values():
             cb.setChecked(False)
+
+    # ── Caption Template Library ─────────────────────────────────
+
+    def _open_template_picker(self):
+        """Open the caption template picker dialog."""
+        from PyQt6.QtWidgets import (
+            QDialog, QDialogButtonBox, QListWidget, QListWidgetItem,
+            QVBoxLayout, QHBoxLayout, QInputDialog,
+        )
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Caption Templates')
+        dlg.resize(520, 420)
+        layout = QVBoxLayout(dlg)
+
+        list_widget = QListWidget()
+        templates = self.controller.db.get_caption_templates()
+
+        def _reload():
+            list_widget.clear()
+            for t in self.controller.db.get_caption_templates():
+                item = QListWidgetItem(
+                    f"{t['name']}" + (f"  [{t['platform']}]" if t['platform'] else '')
+                )
+                item.setData(Qt.ItemDataRole.UserRole, t)
+                list_widget.addItem(item)
+
+        _reload()
+        layout.addWidget(list_widget)
+
+        preview = QTextEdit()
+        preview.setReadOnly(True)
+        preview.setMaximumHeight(100)
+        preview.setPlaceholderText('Select a template to preview it…')
+        layout.addWidget(preview)
+
+        def _on_select(item):
+            t = item.data(Qt.ItemDataRole.UserRole)
+            preview.setPlainText(t.get('body', ''))
+
+        list_widget.currentItemChanged.connect(
+            lambda cur, _: _on_select(cur) if cur else None
+        )
+
+        btn_row = QHBoxLayout()
+        use_btn = QPushButton('Use Template')
+        use_btn.clicked.connect(dlg.accept)
+        save_new_btn = QPushButton('Save Current as Template…')
+        del_btn = QPushButton('Delete')
+        del_btn.setStyleSheet('color: #f44336;')
+        btn_row.addWidget(use_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(save_new_btn)
+        btn_row.addWidget(del_btn)
+        layout.addLayout(btn_row)
+
+        def _save_new():
+            body = self.caption_edit.toPlainText().strip()
+            if not body:
+                return
+            name, ok = QInputDialog.getText(dlg, 'Save Template', 'Template name:')
+            if ok and name.strip():
+                self.controller.db.create_caption_template(name.strip(), body)
+                _reload()
+
+        def _delete_selected():
+            item = list_widget.currentItem()
+            if not item:
+                return
+            t = item.data(Qt.ItemDataRole.UserRole)
+            self.controller.db.delete_caption_template(t['id'])
+            _reload()
+
+        save_new_btn.clicked.connect(_save_new)
+        del_btn.clicked.connect(_delete_selected)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            item = list_widget.currentItem()
+            if item:
+                t = item.data(Qt.ItemDataRole.UserRole)
+                body = t.get('body', '')
+                # Substitute known tokens
+                if self._selected_photo:
+                    from datetime import datetime
+                    replacements = {
+                        '{caption}': self._selected_photo.get('ai_caption') or '',
+                        '{hashtags}': self._selected_photo.get('suggested_hashtags') or '',
+                        '{scene}': self._selected_photo.get('scene_type') or '',
+                        '{location}': self._selected_photo.get('location') or '',
+                        '{mood}': self._selected_photo.get('mood') or '',
+                        '{date}': str(
+                            self._selected_photo.get('exif_date_taken') or
+                            self._selected_photo.get('date_created') or ''
+                        )[:10],
+                        '{filename}': self._selected_photo.get('filename') or '',
+                    }
+                    for token, value in replacements.items():
+                        body = body.replace(token, value)
+                self.caption_edit.setPlainText(body)
+
