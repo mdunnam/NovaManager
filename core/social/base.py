@@ -33,8 +33,13 @@ class SocialPlatform:
         """Return True if credentials look valid (not a live check)."""
         raise NotImplementedError
 
-    def post_photo(self, filepath: str, caption: str = '',
-                   hashtags: list[str] | None = None) -> PostResult:
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list[str] | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         """Post a single photo. Subclasses must implement."""
         raise NotImplementedError
 

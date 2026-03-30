@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QFrame, QSizePolicy, QDateTimeEdit, QMessageBox, QLineEdit,
     QComboBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView,
+    QTabWidget,
 )
 from PyQt6.QtCore import Qt, QSize, QDateTime
 from PyQt6.QtGui import QPixmap, QFont, QColor
@@ -44,6 +45,8 @@ class ComposerTab(QWidget):
         super().__init__()
         self.controller = controller
         self._selected_photo = None
+        self._platform_caption_edits: dict[str, QTextEdit] = {}
+        self._platform_hashtag_edits: dict[str, QLineEdit] = {}
         self._build_ui()
         self.refresh_queue()
 
@@ -106,7 +109,16 @@ class ComposerTab(QWidget):
         right_layout.addWidget(QLabel('<b>Hashtags</b>'))
         self.hashtags_edit = QLineEdit()
         self.hashtags_edit.setPlaceholderText('#photography #photo  (space-separated)')
+        self.hashtags_edit.textChanged.connect(self._update_char_counter)
         right_layout.addWidget(self.hashtags_edit)
+
+        right_layout.addWidget(QLabel('<b>Alt Text</b>'))
+        self.alt_text_edit = QLineEdit()
+        self.alt_text_edit.setPlaceholderText('Accessibility description for screen readers...')
+        self.alt_text_edit.setToolTip(
+            'Saved back to the selected photo. Supported APIs can use this for image accessibility.'
+        )
+        right_layout.addWidget(self.alt_text_edit)
 
         # AI suggestion row
         ai_row = QHBoxLayout()
@@ -140,6 +152,50 @@ class ComposerTab(QWidget):
             self._platform_checks[p] = cb
         platform_layout.addStretch()
         right_layout.addWidget(platform_group)
+
+        # Platform-specific overrides
+        overrides_group = QGroupBox('Per-Platform Overrides')
+        overrides_layout = QVBoxLayout(overrides_group)
+        overrides_hint = QLabel(
+            'Leave a platform tab blank to use the shared caption/hashtags above.'
+        )
+        overrides_hint.setWordWrap(True)
+        overrides_hint.setStyleSheet('color: #888; font-size: 11px;')
+        overrides_layout.addWidget(overrides_hint)
+
+        self.platform_tabs = QTabWidget()
+        self.platform_tabs.currentChanged.connect(self._update_char_counter)
+        for platform in self._PLATFORMS:
+            tab = QWidget()
+            tab_layout = QVBoxLayout(tab)
+            tab_layout.setContentsMargins(8, 8, 8, 8)
+
+            cap_lbl = QLabel(f'{self._PLATFORM_LABELS[platform]} caption override')
+            cap_lbl.setStyleSheet('font-size: 11px; color: #aaa;')
+            tab_layout.addWidget(cap_lbl)
+
+            cap_edit = QTextEdit()
+            cap_edit.setMaximumHeight(90)
+            cap_edit.setPlaceholderText('Optional caption override for this platform...')
+            cap_edit.textChanged.connect(self._update_char_counter)
+            tab_layout.addWidget(cap_edit)
+
+            tags_lbl = QLabel(f'{self._PLATFORM_LABELS[platform]} hashtags override')
+            tags_lbl.setStyleSheet('font-size: 11px; color: #aaa;')
+            tab_layout.addWidget(tags_lbl)
+
+            tags_edit = QLineEdit()
+            tags_edit.setPlaceholderText('Optional hashtag override...')
+            tags_edit.textChanged.connect(self._update_char_counter)
+            tab_layout.addWidget(tags_edit)
+
+            tab_layout.addStretch()
+            self.platform_tabs.addTab(tab, self._PLATFORM_LABELS[platform])
+            self._platform_caption_edits[platform] = cap_edit
+            self._platform_hashtag_edits[platform] = tags_edit
+
+        overrides_layout.addWidget(self.platform_tabs)
+        right_layout.addWidget(overrides_group)
 
         # Schedule row
         schedule_group = QGroupBox('Schedule (optional — leave empty to post now)')
@@ -266,6 +322,9 @@ class ComposerTab(QWidget):
             if photo.get('suggested_hashtags'):
                 self.hashtags_edit.setText(photo['suggested_hashtags'])
 
+        if not self.alt_text_edit.text().strip() and photo.get('alt_text'):
+            self.alt_text_edit.setText(photo['alt_text'])
+
         self._check_for_duplicates(photo['id'])
         self.refresh_queue()
 
@@ -284,22 +343,82 @@ class ComposerTab(QWidget):
     # ── Character counter ────────────────────────────────────────
 
     def _update_char_counter(self):
-        text = self.caption_edit.toPlainText()
+        active_platform = self._current_override_platform()
+        if active_platform:
+            text = self._platform_caption_edits[active_platform].toPlainText()
+            limit = _CAPTION_LIMITS.get(active_platform, 0)
+        else:
+            text = self.caption_edit.toPlainText()
+            platforms = self._get_selected_platforms()
+            limits = [_CAPTION_LIMITS[p] for p in platforms if _CAPTION_LIMITS.get(p, 0) > 0]
+            limit = min(limits) if limits else 0
+
         length = len(text)
-        platforms = self._get_selected_platforms()
-        limits = [_CAPTION_LIMITS[p] for p in platforms if _CAPTION_LIMITS.get(p, 0) > 0]
-        if limits:
-            tightest = min(limits)
-            over = length - tightest
+        if limit > 0:
+            over = length - limit
             if over > 0:
                 self.char_counter.setText(f'{length} chars  ⚠ {over} over limit')
                 self.char_counter.setStyleSheet('color: #e53935; font-size: 11px;')
             else:
-                self.char_counter.setText(f'{length} / {tightest}')
+                self.char_counter.setText(f'{length} / {limit}')
                 self.char_counter.setStyleSheet('color: #aaa; font-size: 11px;')
         else:
             self.char_counter.setText(f'{length} chars')
             self.char_counter.setStyleSheet('color: #aaa; font-size: 11px;')
+
+    def _selected_override_platform(self) -> str | None:
+        """Return the platform for the currently selected override tab."""
+        if not hasattr(self, 'platform_tabs'):
+            return None
+        idx = self.platform_tabs.currentIndex()
+        if idx < 0 or idx >= len(self._PLATFORMS):
+            return None
+        return self._PLATFORMS[idx]
+
+    def _current_override_platform(self) -> str | None:
+        """Return the selected override platform only when it currently has override content."""
+        platform = self._selected_override_platform()
+        if not platform:
+            return None
+        caption_edit = self._platform_caption_edits.get(platform)
+        hashtag_edit = self._platform_hashtag_edits.get(platform)
+        if not caption_edit or not hashtag_edit:
+            return None
+        has_override = (
+            caption_edit.toPlainText().strip() or
+            hashtag_edit.text().strip()
+        )
+        return platform if has_override else None
+
+    def _get_content_for_platform(self, platform: str) -> tuple[str, list[str]]:
+        """Return the caption and hashtags to use for a platform.
+
+        Platform-specific override fields win when populated; otherwise the
+        shared caption and hashtags are used.
+        """
+        shared_caption = self.caption_edit.toPlainText().strip()
+        shared_tags_text = self.hashtags_edit.text().strip()
+        shared_tags = [token.strip() for token in shared_tags_text.split() if token.strip()]
+
+        override_caption = self._platform_caption_edits[platform].toPlainText().strip()
+        override_tags_text = self._platform_hashtag_edits[platform].text().strip()
+        override_tags = [token.strip() for token in override_tags_text.split() if token.strip()]
+
+        return (
+            override_caption or shared_caption,
+            override_tags or shared_tags,
+        )
+
+    def _persist_alt_text(self):
+        """Save the composer alt text back to the selected photo record."""
+        if not self._selected_photo:
+            return
+        new_alt_text = self.alt_text_edit.text().strip()
+        old_alt_text = self._selected_photo.get('alt_text') or ''
+        if new_alt_text == old_alt_text:
+            return
+        self.controller.db.update_photo_metadata(self._selected_photo['id'], {'alt_text': new_alt_text})
+        self._selected_photo['alt_text'] = new_alt_text
 
     # ── Queue preview ────────────────────────────────────────────
 
@@ -411,13 +530,14 @@ class ComposerTab(QWidget):
     def _post_now(self):
         if not self._validate():
             return
-        caption = self.caption_edit.toPlainText().strip()
-        hashtags = [t.strip() for t in self.hashtags_edit.text().split() if t.strip()]
+        self._persist_alt_text()
         filepath = self._selected_photo.get('filepath', '')
+        alt_text = self.alt_text_edit.text().strip()
         results = []
 
         for platform in self._get_selected_platforms():
             try:
+                caption, hashtags = self._get_content_for_platform(platform)
                 creds = self.controller.db.get_credentials(platform) or {}
                 if platform == 'instagram':
                     from core.social.instagram_api import InstagramAPI
@@ -445,7 +565,7 @@ class ComposerTab(QWidget):
                     results.append(f'{platform}: not connected (check Settings)')
                     continue
 
-                result = api.post_photo(filepath, caption, hashtags)
+                result = api.post_photo(filepath, caption, hashtags, alt_text=alt_text)
                 if result.success:
                     results.append(f'{platform}: posted! {result.url}')
                     # Log to posting history (permanent record)
@@ -473,9 +593,7 @@ class ComposerTab(QWidget):
     def _schedule_post(self):
         if not self._validate():
             return
-
-        caption = self.caption_edit.toPlainText().strip()
-        hashtags = ' '.join(t.strip() for t in self.hashtags_edit.text().split() if t.strip())
+        self._persist_alt_text()
 
         if self.use_schedule_cb.isChecked():
             scheduled_time = self.schedule_dt.dateTime().toPyDateTime().isoformat()
@@ -485,6 +603,8 @@ class ComposerTab(QWidget):
         added = []
         for platform in self._get_selected_platforms():
             try:
+                caption, hashtag_tokens = self._get_content_for_platform(platform)
+                hashtags = ' '.join(hashtag_tokens)
                 self.controller.db.schedule_post(
                     photo_id=self._selected_photo['id'],
                     platform=platform,
@@ -509,12 +629,16 @@ class ComposerTab(QWidget):
         self.preview_label.setPixmap(QPixmap())
         self.caption_edit.clear()
         self.hashtags_edit.clear()
+        self.alt_text_edit.clear()
         self.photo_info_label.clear()
         self.result_label.clear()
         self.dupe_warning.setVisible(False)
         self.char_counter.setText('')
         for cb in self._platform_checks.values():
             cb.setChecked(False)
+        for platform in self._PLATFORMS:
+            self._platform_caption_edits[platform].clear()
+            self._platform_hashtag_edits[platform].clear()
 
     # ── Caption Template Library ─────────────────────────────────
 
@@ -571,12 +695,17 @@ class ComposerTab(QWidget):
         layout.addLayout(btn_row)
 
         def _save_new():
-            body = self.caption_edit.toPlainText().strip()
+            target_platform = self._current_override_platform()
+            body = (
+                self._platform_caption_edits[target_platform].toPlainText().strip()
+                if target_platform else
+                self.caption_edit.toPlainText().strip()
+            )
             if not body:
                 return
             name, ok = QInputDialog.getText(dlg, 'Save Template', 'Template name:')
             if ok and name.strip():
-                self.controller.db.create_caption_template(name.strip(), body)
+                self.controller.db.create_caption_template(name.strip(), body, target_platform or '')
                 _reload()
 
         def _delete_selected():
@@ -612,5 +741,9 @@ class ComposerTab(QWidget):
                     }
                     for token, value in replacements.items():
                         body = body.replace(token, value)
-                self.caption_edit.setPlainText(body)
+                target_platform = self._current_override_platform()
+                if target_platform:
+                    self._platform_caption_edits[target_platform].setPlainText(body)
+                else:
+                    self.caption_edit.setPlainText(body)
 

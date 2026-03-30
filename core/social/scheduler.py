@@ -157,6 +157,7 @@ if _QT:
                     photo.get('filepath', ''),
                     caption=post.get('caption', ''),
                     hashtags=(post.get('hashtags') or '').replace(',', ' ').split(),
+                    alt_text=photo.get('alt_text', '') or '',
                 )
 
                 if result.success:

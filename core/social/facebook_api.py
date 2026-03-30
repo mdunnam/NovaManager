@@ -50,8 +50,13 @@ class FacebookAPI(SocialPlatform):
         except Exception as e:
             return False, str(e)
 
-    def post_photo(self, filepath: str, caption: str = '',
-                   hashtags: list[str] | None = None) -> PostResult:
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list[str] | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         if not _HAS_REQUESTS:
             return PostResult(False, self.platform_name, error='requests not installed')
         if not self.is_connected():

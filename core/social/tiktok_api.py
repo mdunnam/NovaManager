@@ -29,8 +29,13 @@ class TikTokAPI(SocialPlatform):
         """Return True only if an access_token credential is present."""
         return bool(self.credentials.get('access_token'))
 
-    def post_photo(self, filepath: str, caption: str = '',
-                   hashtags: list | None = None) -> PostResult:
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         """Attempt to post a photo/video to TikTok.
 
         Args:

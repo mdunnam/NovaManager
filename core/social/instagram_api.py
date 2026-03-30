@@ -205,7 +205,13 @@ class InstagramAPI(SocialPlatform):
 
         return base_url + '/' + quote(resolved.name)
 
-    def post_photo(self, filepath: str, caption: str = '', hashtags: list[str] | None = None) -> PostResult:
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list[str] | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         """Publish an Instagram image post through the Graph API."""
         if not _HAS_REQUESTS:
             return PostResult(False, self.platform_name, error='requests library not installed')

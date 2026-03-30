@@ -21,6 +21,7 @@ except ImportError:
 from .base import SocialPlatform, PostResult
 
 _UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json'
+_METADATA_URL = 'https://upload.twitter.com/1.1/media/metadata/create.json'
 _TWEET_URL = 'https://api.twitter.com/2/tweets'
 
 
@@ -74,8 +75,31 @@ class TwitterAPI(SocialPlatform):
         except Exception:
             return None
 
-    def post_photo(self, filepath: str, caption: str = '',
-                   hashtags: list[str] | None = None) -> PostResult:
+    def _set_media_alt_text(self, media_id: str, alt_text: str) -> bool:
+        """Attach accessibility alt text to an uploaded Twitter/X media item."""
+        if not media_id or not alt_text.strip():
+            return True
+        try:
+            resp = _requests.post(
+                _METADATA_URL,
+                json={
+                    'media_id': media_id,
+                    'alt_text': {'text': alt_text[:1000]},
+                },
+                auth=self._auth(),
+                timeout=30,
+            )
+            return resp.status_code in (200, 201)
+        except Exception:
+            return False
+
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list[str] | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         if not _HAS_REQUESTS:
             return PostResult(False, self.platform_name, error='requests not installed')
         if not self.is_connected():
@@ -89,6 +113,8 @@ class TwitterAPI(SocialPlatform):
             media_id = self._upload_media(filepath)
             if not media_id:
                 return PostResult(False, self.platform_name, error='Media upload failed')
+            if alt_text.strip() and not self._set_media_alt_text(media_id, alt_text):
+                return PostResult(False, self.platform_name, error='Media uploaded but alt text assignment failed')
 
         # Post tweet
         try:

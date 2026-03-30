@@ -59,8 +59,13 @@ class PinterestAPI(SocialPlatform):
         except Exception:
             return []
 
-    def post_photo(self, filepath: str, caption: str = '',
-                   hashtags: list[str] | None = None) -> PostResult:
+    def post_photo(
+        self,
+        filepath: str,
+        caption: str = '',
+        hashtags: list[str] | None = None,
+        alt_text: str = '',
+    ) -> PostResult:
         if not _HAS_REQUESTS:
             return PostResult(False, self.platform_name, error='requests not installed')
         if not self.is_connected():
@@ -91,6 +96,7 @@ class PinterestAPI(SocialPlatform):
                     'board_id': board_id,
                     'title': caption[:100] if caption else '',
                     'description': full_caption[:500],
+                    'alt_text': alt_text[:500] if alt_text else '',
                     'media_source': {
                         'source_type': 'image_url',
                         'url': filepath,
